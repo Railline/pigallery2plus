@@ -53,7 +53,12 @@ export class GalleryManager {
       if (
         Config.Indexing.reIndexingSensitivity === ReIndexingSensitivity.never
       ) {
-        if (knownLastModified && knownLastScanned) {
+        if (
+          knownLastModified &&
+          knownLastScanned &&
+          dir.lastModified === knownLastModified &&
+          dir.lastScanned === knownLastScanned
+        ) {
           return null;
         }
         return await this.getParentDirFromId(connection, session, dir.id);

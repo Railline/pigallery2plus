@@ -92,3 +92,10 @@ app-gallery-map {
     -webkit-transform: perspective(120px) rotateX(-180deg) rotateY(-179.9deg);
   }
 }
+
+.feed-progress {
+  color: var(--bs-secondary-color);
+  font-size: 0.85rem;
+  padding: 12px 0 18px;
+  text-align: center;
+}

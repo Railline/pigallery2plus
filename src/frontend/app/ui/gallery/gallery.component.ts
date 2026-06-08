@@ -12,7 +12,7 @@ import {PageHelper} from '../../model/page.helper';
 import {PhotoDTO} from '../../../../common/entities/PhotoDTO';
 import {QueryParams} from '../../../../common/QueryParams';
 import {take} from 'rxjs/operators';
-import {GallerySortingService, GroupedDirectoryContent} from './navigator/sorting.service';
+import {GallerySortingService, GroupedDirectoryContent, MediaGroup} from './navigator/sorting.service';
 import {FilterService} from './filter/filter.service';
 import {PiTitleService} from '../../model/pi-title.service';
 import {GPXFilesFilterPipe} from '../../pipes/GPXFilesFilterPipe';
@@ -75,8 +75,14 @@ export class GalleryComponent implements OnInit, OnDestroy {
   } = null;
   public readonly mapEnabled: boolean;
   public directoryContent: GroupedDirectoryContent;
+  public visibleDirectoryContent: GroupedDirectoryContent;
+  public visibleMediaCount = 0;
+  public totalMediaCount = 0;
   public isUploadOver = false;
   private $counter: Observable<number>;
+  private readonly feedInitialMediaCount = 800;
+  private readonly feedBatchMediaCount = 800;
+  private readonly feedScrollThresholdPx = 1800;
   private subscription: { [key: string]: Subscription } = {
     content: null,
     route: null,
@@ -216,6 +222,17 @@ export class GalleryComponent implements OnInit, OnDestroy {
     }
   }
 
+
+  @HostListener('window:scroll')
+  onWindowScroll(): void {
+    if (!this.directoryContent || this.visibleMediaCount >= this.totalMediaCount) {
+      return;
+    }
+    if (PageHelper.ScrollY >= PageHelper.MaxScrollY - this.feedScrollThresholdPx) {
+      this.extendVisibleMedia();
+    }
+  }
+
   private onRoute = async (params: Params): Promise<void> => {
     const searchQuery = SearchQueryUtils.parseURLifiedQuery(params[QueryParams.gallery.search.query]);
     if (searchQuery) {
@@ -252,21 +269,80 @@ export class GalleryComponent implements OnInit, OnDestroy {
       return;
     }
     this.directoryContent = content;
+    this.totalMediaCount = this.countMedia(content.mediaGroups);
+    this.visibleMediaCount = Math.min(this.feedInitialMediaCount, this.totalMediaCount);
+    this.updateVisibleDirectoryContent();
+  };
 
-    // enforce change detection on grid
-    this.directoryContent.mediaGroups = this.directoryContent.mediaGroups?.slice();
-    this.isPhotoWithLocation = false;
+  private extendVisibleMedia(): void {
+    const nextLimit = Math.min(
+      this.visibleMediaCount + this.feedBatchMediaCount,
+      this.totalMediaCount
+    );
+    if (nextLimit === this.visibleMediaCount) {
+      return;
+    }
+    this.visibleMediaCount = nextLimit;
+    this.updateVisibleDirectoryContent();
+  }
 
-    for (const mediaGroup of content.mediaGroups) {
+  private updateVisibleDirectoryContent(): void {
+    if (!this.directoryContent) {
+      this.visibleDirectoryContent = null;
+      this.isPhotoWithLocation = false;
+      return;
+    }
 
-      if (
-        mediaGroup.media
-          .findIndex((m: PhotoDTO) => !!m.metadata?.positionData?.GPSData?.longitude) !== -1
-      ) {
-        this.isPhotoWithLocation = true;
+    this.visibleDirectoryContent = {
+      directories: this.directoryContent.directories,
+      metaFile: this.directoryContent.metaFile,
+      mediaGroups: this.sliceMediaGroups(this.directoryContent.mediaGroups, this.visibleMediaCount),
+    };
+    this.isPhotoWithLocation = this.hasVisiblePhotoWithLocation(this.visibleDirectoryContent.mediaGroups);
+  }
+
+  private sliceMediaGroups(mediaGroups: MediaGroup[], limit: number): MediaGroup[] {
+    if (!mediaGroups || limit <= 0) {
+      return [];
+    }
+    const visibleGroups: MediaGroup[] = [];
+    let remaining = limit;
+
+    for (const mediaGroup of mediaGroups) {
+      if (remaining <= 0) {
         break;
       }
+      const media = mediaGroup.media.slice(0, remaining);
+      if (media.length > 0) {
+        visibleGroups.push({
+          name: mediaGroup.name,
+          date: mediaGroup.date,
+          media,
+        });
+        remaining -= media.length;
+      }
     }
-  };
+
+    return visibleGroups;
+  }
+
+  private countMedia(mediaGroups: MediaGroup[]): number {
+    if (!mediaGroups) {
+      return 0;
+    }
+    return mediaGroups.reduce((count, mediaGroup) => count + mediaGroup.media.length, 0);
+  }
+
+  private hasVisiblePhotoWithLocation(mediaGroups: MediaGroup[]): boolean {
+    if (!mediaGroups) {
+      return false;
+    }
+    for (const mediaGroup of mediaGroups) {
+      if (mediaGroup.media.findIndex((m: PhotoDTO) => !!m.metadata?.positionData?.GPSData?.longitude) !== -1) {
+        return true;
+      }
+    }
+    return false;
+  }
 
 }

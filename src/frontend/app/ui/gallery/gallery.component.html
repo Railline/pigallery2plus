@@ -52,11 +52,14 @@
           class="rounded"
           [class.rounded-start-0]="ShowMarkDown"
           *ngIf="ShowMap"
-          [photos]="directoryContent?.mediaGroups | photosOnly"
-          [gpxFiles]="directoryContent?.metaFile | gpxFiles"></app-gallery-map>
+          [photos]="visibleDirectoryContent?.mediaGroups | photosOnly"
+          [gpxFiles]="visibleDirectoryContent?.metaFile | gpxFiles"></app-gallery-map>
       </div>
-      <app-gallery-grid [mediaGroups]="directoryContent?.mediaGroups"
+      <app-gallery-grid [mediaGroups]="visibleDirectoryContent?.mediaGroups"
                         [lightbox]="lightbox"></app-gallery-grid>
+      <div class="feed-progress" *ngIf="totalMediaCount > visibleMediaCount">
+        {{ visibleMediaCount }} / {{ totalMediaCount }}
+      </div>
 
     </ng-container>
   </div>
