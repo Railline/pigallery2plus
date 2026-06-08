@@ -1,4 +1,4 @@
-import {Component, HostListener, OnDestroy, OnInit, ViewChild} from '@angular/core';
+import {Component, ElementRef, HostListener, OnDestroy, OnInit, ViewChild} from '@angular/core';
 import {AuthenticationService} from '../../model/network/authentication.service';
 import {ActivatedRoute, Params, Router} from '@angular/router';
 import {ContentService} from './content.service';
@@ -59,6 +59,8 @@ import {UploaderComponent} from './uploader/uploader.gallery.component';
 export class GalleryComponent implements OnInit, OnDestroy {
   @ViewChild(GalleryGridComponent, {static: false})
   grid: GalleryGridComponent;
+  @ViewChild('feedProgress', {static: false})
+  feedProgress: ElementRef<HTMLElement>;
 
   public showSearchBar = false;
   public showShare = false;
@@ -296,7 +298,7 @@ export class GalleryComponent implements OnInit, OnDestroy {
     if (!this.directoryContent || this.visibleMediaCount >= this.totalMediaCount) {
       return;
     }
-    if (PageHelper.ScrollY < PageHelper.MaxScrollY - this.feedScrollThresholdPx) {
+    if (!this.isNearFeedEnd()) {
       return;
     }
     if (this.visibleMediaCount < this.countMedia(this.directoryContent.mediaGroups)) {
@@ -304,6 +306,14 @@ export class GalleryComponent implements OnInit, OnDestroy {
       return;
     }
     this.contentLoader.loadMoreCurrentDirectory().catch(console.error);
+  }
+
+  private isNearFeedEnd(): boolean {
+    const progressElement = this.feedProgress?.nativeElement;
+    if (progressElement) {
+      return progressElement.getBoundingClientRect().top <= window.innerHeight + this.feedScrollThresholdPx;
+    }
+    return PageHelper.ScrollY >= PageHelper.MaxScrollY - this.feedScrollThresholdPx;
   }
 
   private extendVisibleMedia(): void {

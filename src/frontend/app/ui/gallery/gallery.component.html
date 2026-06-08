@@ -57,7 +57,7 @@
       </div>
       <app-gallery-grid [mediaGroups]="visibleDirectoryContent?.mediaGroups"
                         [lightbox]="lightbox"></app-gallery-grid>
-      <div class="feed-progress" *ngIf="totalMediaCount > visibleMediaCount">
+      <div #feedProgress class="feed-progress" *ngIf="totalMediaCount > visibleMediaCount">
         {{ visibleMediaCount }} / {{ totalMediaCount }}
       </div>
 
