@@ -122,10 +122,20 @@ export class ContentLoaderService implements OnDestroy {
         return;
       }
 
-      const packedCurrent = ContentWrapperUtils.pack(current as any);
-      packedCurrent.directory.media = packedCurrent.directory.media.concat(cw.directory.media);
-      packedCurrent.directory.mediaPage = cw.directory.mediaPage;
-      this.setContent(ContentWrapperUtils.unpack(packedCurrent));
+      const nextContent = ContentWrapperUtils.unpack(cw);
+      if (!nextContent?.directory?.media?.length) {
+        return;
+      }
+
+      const mergedDirectory = {
+        ...current.directory,
+        media: current.directory.media.concat(nextContent.directory.media),
+        mediaPage: nextContent.directory.mediaPage,
+      };
+      this.content.next({
+        ...current,
+        directory: mergedDirectory,
+      });
     } finally {
       this.loadingMoreDirectory = false;
     }
