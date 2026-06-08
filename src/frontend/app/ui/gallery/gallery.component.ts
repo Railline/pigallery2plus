@@ -80,8 +80,8 @@ export class GalleryComponent implements OnInit, OnDestroy {
   public totalMediaCount = 0;
   public isUploadOver = false;
   private $counter: Observable<number>;
-  private readonly feedInitialMediaCount = 800;
-  private readonly feedBatchMediaCount = 800;
+  private readonly feedInitialMediaCount = 120;
+  private readonly feedBatchMediaCount = 240;
   private readonly feedScrollThresholdPx = 1800;
   private subscription: { [key: string]: Subscription } = {
     content: null,
