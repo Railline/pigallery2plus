@@ -225,6 +225,10 @@ export class GalleryComponent implements OnInit, OnDestroy {
 
 
   @HostListener('window:scroll')
+  @HostListener('document:scroll')
+  @HostListener('window:resize')
+  @HostListener('window:wheel')
+  @HostListener('window:touchmove')
   onWindowScroll(): void {
     this.loadMoreIfNearEnd();
   }
