@@ -476,8 +476,8 @@ export class GalleryManager {
       const limit = Number.isFinite(mediaLimit) && mediaLimit > 0 ? Math.min(mediaLimit, 1000) : null;
       if (limit !== null) {
         mQuery
-          .orderBy('media.metadata.creationDate', 'DESC')
-          .addOrderBy('media.id', 'DESC')
+          .orderBy('media.metadata.creationDate', 'ASC')
+          .addOrderBy('media.id', 'ASC')
           .skip(offset)
           .take(limit);
       }

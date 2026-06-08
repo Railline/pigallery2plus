@@ -83,6 +83,7 @@ export class GalleryComponent implements OnInit, OnDestroy {
   private readonly feedInitialMediaCount = 120;
   private readonly feedBatchMediaCount = 240;
   private readonly feedScrollThresholdPx = 1800;
+  private autoLoadMoreScheduled = false;
   private subscription: { [key: string]: Subscription } = {
     content: null,
     route: null,
@@ -225,16 +226,7 @@ export class GalleryComponent implements OnInit, OnDestroy {
 
   @HostListener('window:scroll')
   onWindowScroll(): void {
-    if (!this.directoryContent || this.visibleMediaCount >= this.totalMediaCount) {
-      return;
-    }
-    if (PageHelper.ScrollY >= PageHelper.MaxScrollY - this.feedScrollThresholdPx) {
-      if (this.visibleMediaCount < this.countMedia(this.directoryContent.mediaGroups)) {
-        this.extendVisibleMedia();
-        return;
-      }
-      this.contentLoader.loadMoreCurrentDirectory().catch(console.error);
-    }
+    this.loadMoreIfNearEnd();
   }
 
   private onRoute = async (params: Params): Promise<void> => {
@@ -282,7 +274,33 @@ export class GalleryComponent implements OnInit, OnDestroy {
       ? Math.min(loadedMediaCount, previousVisibleMediaCount + this.feedBatchMediaCount)
       : Math.min(this.feedInitialMediaCount, loadedMediaCount);
     this.updateVisibleDirectoryContent();
+    this.scheduleLoadMoreIfNeeded();
   };
+
+  private scheduleLoadMoreIfNeeded(): void {
+    if (this.autoLoadMoreScheduled) {
+      return;
+    }
+    this.autoLoadMoreScheduled = true;
+    window.setTimeout(() => {
+      this.autoLoadMoreScheduled = false;
+      this.loadMoreIfNearEnd();
+    }, 0);
+  }
+
+  private loadMoreIfNearEnd(): void {
+    if (!this.directoryContent || this.visibleMediaCount >= this.totalMediaCount) {
+      return;
+    }
+    if (PageHelper.ScrollY < PageHelper.MaxScrollY - this.feedScrollThresholdPx) {
+      return;
+    }
+    if (this.visibleMediaCount < this.countMedia(this.directoryContent.mediaGroups)) {
+      this.extendVisibleMedia();
+      return;
+    }
+    this.contentLoader.loadMoreCurrentDirectory().catch(console.error);
+  }
 
   private extendVisibleMedia(): void {
     const nextLimit = Math.min(
