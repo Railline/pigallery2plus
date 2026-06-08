@@ -22,6 +22,8 @@ export const QueryParams = {
     directory: 'directory',
     knownLastModified: 'klm',
     knownLastScanned: 'kls',
+    mediaOffset: 'mo',
+    mediaLimit: 'ml',
     lightbox: {
       playback: 'play',
       captionAlwaysOn: 'cAO',

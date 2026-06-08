@@ -22,6 +22,9 @@ export class ContentLoaderService implements OnDestroy {
   private lastContentRequest: { type: 'directory' | 'search', value: string } = null;
   private pollingTimerRestart = new Subject<void>();
   private pollingSub: Subscription;
+  private readonly directoryInitialPageSize = 120;
+  private readonly directoryPageSize = 240;
+  private loadingMoreDirectory = false;
 
   constructor(
     private networkService: NetworkService,
@@ -76,45 +79,12 @@ export class ContentLoaderService implements OnDestroy {
   }
 
   public async loadDirectory(directoryName: string, forceReload = false): Promise<void> {
-
-    // load from cache
-    const cachedCw = this.galleryCacheService.getDirectory(directoryName);
-
-    this.setContent(ContentWrapperUtils.unpack(cachedCw));
+    this.setContent({} as PackedContentWrapperWithError);
     this.ongoingContentRequest = directoryName;
     this.lastContentRequest = {type: 'directory', value: directoryName};
 
-    // prepare server request
-    const params: { [key: string]: unknown } = {};
-    if (Config.Sharing.enabled === true) {
-      if (this.shareService.isSharing()) {
-        params[QueryParams.gallery.sharingKey_query] =
-          this.shareService.getSharingKey();
-      }
-    }
-    let cw :PackedContentWrapperWithError = null;
+    const cw = await this.loadDirectoryPage(directoryName, 0, this.directoryInitialPageSize);
 
-    try {
-      if (
-        !forceReload &&
-        cachedCw?.directory &&
-        cachedCw?.directory.lastModified &&
-        cachedCw?.directory.lastScanned &&
-        !cachedCw?.directory.isPartial
-      ) {
-        params[QueryParams.gallery.knownLastModified] =
-          cachedCw?.directory.lastModified;
-        params[QueryParams.gallery.knownLastScanned] =
-          cachedCw?.directory.lastScanned;
-      }
-
-      cw = await this.networkService.getJson<PackedContentWrapperWithError>(
-        '/gallery/content/' + encodeURIComponent(directoryName),
-        params
-      );
-    } catch (e) {
-      console.error(e);
-    }
     if (this.ongoingContentRequest !== directoryName) {
       return;
     }
@@ -125,11 +95,59 @@ export class ContentLoaderService implements OnDestroy {
       return;
     }
 
-    if (!!cw?.directory) {
-      this.galleryCacheService.setDirectory(cw); // save it before adding references
-    }
     this.setContent(ContentWrapperUtils.unpack(cw));
+  }
 
+  public async loadMoreCurrentDirectory(): Promise<void> {
+    if (this.loadingMoreDirectory || this.lastContentRequest?.type !== 'directory') {
+      return;
+    }
+
+    const current = this.content.value;
+    const page = current?.directory?.mediaPage;
+    if (!current?.directory || !page?.hasMore) {
+      return;
+    }
+
+    this.loadingMoreDirectory = true;
+    try {
+      const cw = await this.loadDirectoryPage(
+        this.lastContentRequest.value,
+        current.directory.media.length,
+        this.directoryPageSize
+      );
+      if (!cw?.directory?.media?.length) {
+        return;
+      }
+
+      const packedCurrent = ContentWrapperUtils.pack(current as any);
+      packedCurrent.directory.media = packedCurrent.directory.media.concat(cw.directory.media);
+      packedCurrent.directory.mediaPage = cw.directory.mediaPage;
+      this.setContent(ContentWrapperUtils.unpack(packedCurrent));
+    } finally {
+      this.loadingMoreDirectory = false;
+    }
+  }
+
+  private async loadDirectoryPage(directoryName: string, offset: number, limit: number): Promise<PackedContentWrapperWithError> {
+    const params: { [key: string]: unknown } = {
+      [QueryParams.gallery.mediaOffset]: offset,
+      [QueryParams.gallery.mediaLimit]: limit,
+    };
+
+    if (Config.Sharing.enabled === true && this.shareService.isSharing()) {
+      params[QueryParams.gallery.sharingKey_query] = this.shareService.getSharingKey();
+    }
+
+    try {
+      return await this.networkService.getJson<PackedContentWrapperWithError>(
+        '/gallery/content/' + encodeURIComponent(directoryName),
+        params
+      );
+    } catch (e) {
+      console.error(e);
+      return null;
+    }
   }
 
   public async search(query: SearchQueryDTO, forceReload = false): Promise<void> {

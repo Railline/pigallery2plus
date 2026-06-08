@@ -37,7 +37,9 @@ export class GalleryManager {
     session: SessionContext,
     relativeDirectoryName: string,
     knownLastModified?: number,
-    knownLastScanned?: number
+    knownLastScanned?: number,
+    mediaOffset?: number,
+    mediaLimit?: number
   ): Promise<ParentDirectoryDTO> {
     const directoryPath = GalleryManager.parseRelativeDirPath(
       relativeDirectoryName
@@ -61,7 +63,7 @@ export class GalleryManager {
         ) {
           return null;
         }
-        return await this.getParentDirFromId(connection, session, dir.id);
+        return await this.getParentDirFromId(connection, session, dir.id, mediaOffset, mediaLimit);
       }
 
       const stat = fs.statSync(
@@ -92,7 +94,7 @@ export class GalleryManager {
         Logger.silly(LOG_TAG, 'Reindexing reason: lastModified mismatch: known: ' + dir.lastModified + ', current:' + lastModified);
         // Need to wait for save, then return a DB-based result with projection
         await ObjectManagers.getInstance().IndexingManager.indexDirectory(relativeDirectoryName, true);
-        return await this.getParentDirFromId(connection, session, dir.id);
+        return await this.getParentDirFromId(connection, session, dir.id, mediaOffset, mediaLimit);
 
       }
 
@@ -109,7 +111,7 @@ export class GalleryManager {
           .IndexingManager.indexDirectory(relativeDirectoryName)
           .catch(console.error);
       }
-      return await this.getParentDirFromId(connection, session, dir.id);
+      return await this.getParentDirFromId(connection, session, dir.id, mediaOffset, mediaLimit);
     }
 
     // never scanned (deep indexed), do it and return with it
@@ -122,7 +124,7 @@ export class GalleryManager {
       );
       const connection = await SQLConnection.getConnection();
       const dir = await this.getDirIdAndTime(connection, directoryPath.name, directoryPath.parent);
-      return await this.getParentDirFromId(connection, session, dir.id);
+      return await this.getParentDirFromId(connection, session, dir.id, mediaOffset, mediaLimit);
     }
     return ObjectManagers.getInstance().IndexingManager.indexDirectory(relativeDirectoryName);
   }
@@ -403,7 +405,9 @@ export class GalleryManager {
   protected async getParentDirFromId(
     connection: Connection,
     session: SessionContext,
-    partialDirId: number
+    partialDirId: number,
+    mediaOffset?: number,
+    mediaLimit?: number
   ): Promise<ParentDirectoryDTO> {
 
     const query = connection
@@ -467,7 +471,25 @@ export class GalleryManager {
       if (session.projectionQuery) {
         mQuery.andWhere(session.projectionQuery);
       }
+      const totalMediaCount = await mQuery.getCount();
+      const offset = Number.isFinite(mediaOffset) && mediaOffset > 0 ? mediaOffset : 0;
+      const limit = Number.isFinite(mediaLimit) && mediaLimit > 0 ? Math.min(mediaLimit, 1000) : null;
+      if (limit !== null) {
+        mQuery
+          .orderBy('media.metadata.creationDate', 'DESC')
+          .addOrderBy('media.id', 'DESC')
+          .skip(offset)
+          .take(limit);
+      }
       dir.media = await mQuery.getMany();
+      if (limit !== null) {
+        (dir as ParentDirectoryDTO).mediaPage = {
+          offset,
+          limit,
+          total: totalMediaCount,
+          hasMore: offset + dir.media.length < totalMediaCount,
+        };
+      }
 
       // Separate query for meta files
       if (

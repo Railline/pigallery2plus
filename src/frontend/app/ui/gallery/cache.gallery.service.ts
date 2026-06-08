@@ -313,7 +313,7 @@ export class GalleryCacheService {
   }
 
   public setDirectory(cw: PackedContentWrapperWithError): void {
-    if (Config.Gallery.enableCache === false) {
+    if (Config.Gallery.enableCache === false || cw?.directory?.mediaPage) {
       return;
     }
 

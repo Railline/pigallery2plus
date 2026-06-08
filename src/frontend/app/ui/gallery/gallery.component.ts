@@ -229,7 +229,11 @@ export class GalleryComponent implements OnInit, OnDestroy {
       return;
     }
     if (PageHelper.ScrollY >= PageHelper.MaxScrollY - this.feedScrollThresholdPx) {
-      this.extendVisibleMedia();
+      if (this.visibleMediaCount < this.countMedia(this.directoryContent.mediaGroups)) {
+        this.extendVisibleMedia();
+        return;
+      }
+      this.contentLoader.loadMoreCurrentDirectory().catch(console.error);
     }
   }
 
@@ -268,9 +272,15 @@ export class GalleryComponent implements OnInit, OnDestroy {
     if (!content) {
       return;
     }
+    const previousLoadedMediaCount = this.countMedia(this.directoryContent?.mediaGroups);
+    const previousVisibleMediaCount = this.visibleMediaCount || this.feedInitialMediaCount;
+    const loadedMediaCount = this.countMedia(content.mediaGroups);
+
     this.directoryContent = content;
-    this.totalMediaCount = this.countMedia(content.mediaGroups);
-    this.visibleMediaCount = Math.min(this.feedInitialMediaCount, this.totalMediaCount);
+    this.totalMediaCount = this.contentLoader.content.value?.directory?.mediaPage?.total || loadedMediaCount;
+    this.visibleMediaCount = loadedMediaCount > previousLoadedMediaCount
+      ? Math.min(loadedMediaCount, previousVisibleMediaCount + this.feedBatchMediaCount)
+      : Math.min(this.feedInitialMediaCount, loadedMediaCount);
     this.updateVisibleDirectoryContent();
   };
 

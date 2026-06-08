@@ -33,6 +33,14 @@ export interface DirectoryBaseDTO<S extends FileDTO = MediaDTO>
   media?: S[];
   metaFile?: FileDTO[];
   cache?: DirectoryCacheDTO;
+  mediaPage?: DirectoryMediaPageDTO;
+}
+
+export interface DirectoryMediaPageDTO {
+  offset: number;
+  limit: number;
+  total: number;
+  hasMore: boolean;
 }
 
 export interface ParentDirectoryDTO<S extends FileDTO = MediaDTO>
