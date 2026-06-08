@@ -1,4 +1,4 @@
-import {promises as fsp, Stats} from 'fs';
+import {Dirent, promises as fsp, Stats} from 'fs';
 import * as path from 'path';
 import {DirectoryPathDTO, ParentDirectoryDTO, SubDirectoryDTO,} from '../../../common/entities/DirectoryDTO';
 import {PhotoDTO} from '../../../common/entities/PhotoDTO';
@@ -179,10 +179,11 @@ export class DiskManager {
     ) {
       return directory;
     }
-    const list = await fsp.readdir(absoluteDirectoryName);
+    const list = await fsp.readdir(absoluteDirectoryName, {withFileTypes: true});
     let count = 0;
 
-    for (const file of list) {
+    for (const dirent of list) {
+      const file = dirent.name;
       count++;
 
       if (count % 1000 === 0) {
@@ -194,7 +195,7 @@ export class DiskManager {
       const fullFilePath = path.normalize(
         path.join(absoluteDirectoryName, file)
       );
-      if ((await fsp.stat(fullFilePath)).isDirectory()) {
+      if (DiskManager.isDirentDirectory(dirent)) {
         try {
           if (
             settings.noDirectory === true ||
@@ -339,6 +340,10 @@ export class DiskManager {
     return directory;
   }
 
+
+  private static isDirentDirectory(dirent: Dirent): boolean {
+    return dirent.isDirectory();
+  }
 
   private static isEnabledMetaFile(fullPath: string): boolean {
     const extension = path.extname(fullPath).toLowerCase();

@@ -1,7 +1,7 @@
 import {Component, EventEmitter, Input, OnChanges, OnInit, Output,} from '@angular/core';
 import {CameraMetadata, PhotoDTO, PhotoMetadata, PositionMetaData,} from '../../../../../../common/entities/PhotoDTO';
 import {Config} from '../../../../../../common/config/public/Config';
-import {MediaDTO, MediaDTOUtils,} from '../../../../../../common/entities/MediaDTO';
+import {MediaDTO, MediaDTOUtils, MediaMetadata,} from '../../../../../../common/entities/MediaDTO';
 import {VideoDTO, VideoMetadata,} from '../../../../../../common/entities/VideoDTO';
 import {Utils} from '../../../../../../common/Utils';
 import {QueryService} from '../../../../model/query.service';
@@ -117,6 +117,21 @@ export class InfoPanelLightboxComponent implements OnInit, OnChanges {
 
   get CameraData(): CameraMetadata {
     return (this.media as PhotoDTO).metadata.cameraData;
+  }
+
+  hasGalleryGrabberData(): boolean {
+    const metadata = this.media?.metadata as MediaMetadata;
+    return !!(
+      metadata &&
+      (
+        metadata.galleryGrabberCreator ||
+        metadata.galleryGrabberPreservedFileName ||
+        metadata.galleryGrabberSource ||
+        metadata.galleryGrabberSourceUrl ||
+        metadata.galleryGrabberSpecialInstructions ||
+        metadata.galleryGrabberPrivateMarker
+      )
+    );
   }
 
   ngOnChanges(): void {

@@ -52,6 +52,23 @@
       </div>
     </div>
   </div>
+  <div class="row" *ngIf="hasGalleryGrabberData()" title="Gallery Grabber metadata">
+    <div class="col-1 ps-0">
+      <ng-icon class="details-icon" name="ionInformationCircleOutline" title="Gallery Grabber"></ng-icon>
+    </div>
+    <div class="col-11">
+      <div class="details-main">Gallery Grabber</div>
+      <div class="details-sub text-secondary row">
+        <div class="col-12" *ngIf="media.metadata.galleryGrabberCreator">Creator: {{ media.metadata.galleryGrabberCreator }}</div>
+        <div class="col-12" *ngIf="media.metadata.galleryGrabberPreservedFileName">Preserved filename: {{ media.metadata.galleryGrabberPreservedFileName }}</div>
+        <div class="col-12" *ngIf="media.metadata.galleryGrabberSource">Source: {{ media.metadata.galleryGrabberSource }}</div>
+        <div class="col-12" *ngIf="media.metadata.galleryGrabberSourceUrl">Source URL: <a [href]="media.metadata.galleryGrabberSourceUrl" target="_blank" rel="noopener noreferrer">{{ media.metadata.galleryGrabberSourceUrl }}</a></div>
+        <div class="col-12" *ngIf="media.metadata.galleryGrabberSpecialInstructions">Special instructions: {{ media.metadata.galleryGrabberSpecialInstructions }}</div>
+        <div class="col-12" *ngIf="media.metadata.galleryGrabberPrivateMarker">Private marker: Image From Private Railline Gallery</div>
+      </div>
+    </div>
+  </div>
+
   <div class="row pt-0" *ngIf="isLivePhoto()" title="Companion video" i18n-title>
     <div class="col-1 ps-0">
       <ng-icon class="details-icon" name="ionVideocamOutline" title="Live Photo video" i18n-title></ng-icon>
