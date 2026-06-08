@@ -304,9 +304,86 @@ export class MetadataLoader {
     MetadataLoader.mapGPS(metadata, exif);
     MetadataLoader.mapToponyms(metadata, exif);
     MetadataLoader.mapRating(metadata, exif);
+    MetadataLoader.mapGalleryGrabberMetadata(metadata, exif);
     if (Config.Faces.enabled) {
       MetadataLoader.mapFaces(metadata, exif, orientation);
     }
+  }
+
+  private static mapGalleryGrabberMetadata(metadata: PhotoMetadata | VideoMetadata, exif: any) {
+    const getFirst = (...paths: string[]): string => {
+      for (const keyPath of paths) {
+        const value = keyPath.split('.').reduce((acc: any, key: string) => acc == null ? undefined : acc[key], exif);
+        const normalized = MetadataLoader.normalizeMetadataValue(value);
+        if (normalized) {
+          return normalized;
+        }
+      }
+      return '';
+    };
+
+    const creator = getFirst('dc.creator', 'xmp.Creator', 'xmp.creator', 'iptc.Byline', 'ifd0.Artist');
+    const preservedFileName = getFirst('xmp.PreservedFileName', 'xmp.preservedFileName', 'XMP.PreservedFileName');
+    const source = getFirst('iptc.Source', 'photoshop.Source', 'xmp.Source', 'xmp.source');
+    const sourceUrl = getFirst('iptc.DocumentNotes', 'photoshop.DocumentNotes', 'xmp.DocumentNotes', 'xmp.documentNotes', 'ifd0.DocumentName');
+    const specialInstructions = getFirst('iptc.SpecialInstructions', 'photoshop.Instructions', 'photoshop.SpecialInstructions', 'xmp.Instructions', 'xmp.SpecialInstructions');
+
+    if (creator) {
+      metadata.galleryGrabberCreator = Utils.asciiToUTF8(creator);
+    }
+    if (preservedFileName) {
+      metadata.galleryGrabberPreservedFileName = Utils.asciiToUTF8(preservedFileName);
+    }
+    if (source) {
+      metadata.galleryGrabberSource = Utils.asciiToUTF8(source);
+    }
+    if (sourceUrl) {
+      metadata.galleryGrabberSourceUrl = sourceUrl;
+    }
+    if (specialInstructions) {
+      metadata.galleryGrabberSpecialInstructions = Utils.asciiToUTF8(specialInstructions);
+      metadata.galleryGrabberPrivateMarker = metadata.galleryGrabberSpecialInstructions === 'Image From Private Railline Gallery';
+    }
+
+    const extraKeywords = [
+      metadata.galleryGrabberCreator,
+      metadata.galleryGrabberPreservedFileName,
+      metadata.galleryGrabberSource,
+      metadata.galleryGrabberSourceUrl,
+      metadata.galleryGrabberSpecialInstructions,
+    ].filter((value): value is string => !!value);
+    if (extraKeywords.length > 0) {
+      if (metadata.keywords === undefined) {
+        metadata.keywords = [];
+      }
+      for (const keyword of extraKeywords) {
+        if (metadata.keywords.indexOf(keyword) === -1) {
+          metadata.keywords.push(keyword);
+        }
+      }
+    }
+  }
+
+  private static normalizeMetadataValue(value: any): string {
+    if (value == null) {
+      return '';
+    }
+    if (Array.isArray(value)) {
+      return value.map((v: any) => MetadataLoader.normalizeMetadataValue(v)).filter((v: string) => !!v).join(', ');
+    }
+    if (typeof value === 'object') {
+      if (typeof value.value === 'string') {
+        return value.value.trim();
+      }
+      if (Array.isArray(value.value)) {
+        return value.value.map((v: any) => MetadataLoader.normalizeMetadataValue(v)).filter((v: string) => !!v).join(', ');
+      }
+      if (typeof value.description === 'string') {
+        return value.description.trim();
+      }
+      return '';
+    }
+    return String(value).trim();
   }
 
   private static getOrientation(exif: any): number {

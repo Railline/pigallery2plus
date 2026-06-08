@@ -179,6 +179,27 @@ export class MediaMetadataEntity implements MediaMetadata {
 
   @Column({type: 'text', nullable: true})
   contentIdentifier: string;
+
+  @Column({type: 'text', nullable: true, charset: columnCharsetCS.charset, collation: columnCharsetCS.collation})
+  @Index()
+  galleryGrabberCreator: string;
+
+  @Column({type: 'text', nullable: true, charset: columnCharsetCS.charset, collation: columnCharsetCS.collation})
+  galleryGrabberPreservedFileName: string;
+
+  @Column({type: 'text', nullable: true, charset: columnCharsetCS.charset, collation: columnCharsetCS.collation})
+  @Index()
+  galleryGrabberSource: string;
+
+  @Column({type: 'text', nullable: true, charset: columnCharsetCS.charset, collation: columnCharsetCS.collation})
+  galleryGrabberSourceUrl: string;
+
+  @Column({type: 'text', nullable: true, charset: columnCharsetCS.charset, collation: columnCharsetCS.collation})
+  galleryGrabberSpecialInstructions: string;
+
+  @Column({type: 'boolean', nullable: false, default: false})
+  @Index()
+  galleryGrabberPrivateMarker: boolean;
 }
 
 // TODO: fix inheritance once its working in typeorm

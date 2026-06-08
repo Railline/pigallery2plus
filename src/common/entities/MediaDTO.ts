@@ -38,6 +38,12 @@ export interface MediaMetadata {
   title?: string;
   caption?: string;
   contentIdentifier?: string;
+  galleryGrabberCreator?: string;
+  galleryGrabberPreservedFileName?: string;
+  galleryGrabberSource?: string;
+  galleryGrabberSourceUrl?: string;
+  galleryGrabberSpecialInstructions?: string;
+  galleryGrabberPrivateMarker?: boolean;
 }
 
 export interface MediaDimension {
