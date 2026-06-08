@@ -24,6 +24,8 @@ export const QueryParams = {
     knownLastScanned: 'kls',
     mediaOffset: 'mo',
     mediaLimit: 'ml',
+    mediaSortMethod: 'msm',
+    mediaSortAscending: 'msa',
     lightbox: {
       playback: 'play',
       captionAlwaysOn: 'cAO',

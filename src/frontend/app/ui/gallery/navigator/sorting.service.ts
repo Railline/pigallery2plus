@@ -43,11 +43,9 @@ export class GallerySortingService {
       if (c) {
         const sort = this.galleryCacheService.getSorting(c);
         const group = this.galleryCacheService.getGrouping(c);
-        if (sort !== null) {
-          this.sorting.next(sort);
-        } else {
-          this.sorting.next(this.getDefaultSorting(c));
-        }
+        const nextSort = sort !== null ? sort : this.getDefaultSorting(c);
+        this.galleryService.setDirectorySorting(nextSort, false);
+        this.sorting.next(nextSort);
         if (group !== null) {
           this.grouping.next(group);
         } else {
@@ -89,6 +87,7 @@ export class GallerySortingService {
   }
 
   setSorting(sorting: SortingMethod): void {
+    this.galleryService.setDirectorySorting(sorting, true);
     this.sorting.next(sorting);
     if (this.galleryService.content.value) {
       if (

@@ -16,6 +16,7 @@ import {ReIndexingSensitivity} from '../../../common/config/private/PrivateConfi
 import {DiskManager} from '../fileaccess/DiskManager';
 import {SessionContext} from '../SessionContext';
 import {FileEntity} from './enitites/FileEntity';
+import {SortByTypes} from '../../../common/entities/SortingMethods';
 
 const LOG_TAG = '[GalleryManager]';
 
@@ -39,7 +40,9 @@ export class GalleryManager {
     knownLastModified?: number,
     knownLastScanned?: number,
     mediaOffset?: number,
-    mediaLimit?: number
+    mediaLimit?: number,
+    mediaSortMethod?: number,
+    mediaSortAscending = true
   ): Promise<ParentDirectoryDTO> {
     const directoryPath = GalleryManager.parseRelativeDirPath(
       relativeDirectoryName
@@ -63,7 +66,7 @@ export class GalleryManager {
         ) {
           return null;
         }
-        return await this.getParentDirFromId(connection, session, dir.id, mediaOffset, mediaLimit);
+        return await this.getParentDirFromId(connection, session, dir.id, mediaOffset, mediaLimit, mediaSortMethod, mediaSortAscending);
       }
 
       const stat = fs.statSync(
@@ -94,7 +97,7 @@ export class GalleryManager {
         Logger.silly(LOG_TAG, 'Reindexing reason: lastModified mismatch: known: ' + dir.lastModified + ', current:' + lastModified);
         // Need to wait for save, then return a DB-based result with projection
         await ObjectManagers.getInstance().IndexingManager.indexDirectory(relativeDirectoryName, true);
-        return await this.getParentDirFromId(connection, session, dir.id, mediaOffset, mediaLimit);
+        return await this.getParentDirFromId(connection, session, dir.id, mediaOffset, mediaLimit, mediaSortMethod, mediaSortAscending);
 
       }
 
@@ -111,7 +114,7 @@ export class GalleryManager {
           .IndexingManager.indexDirectory(relativeDirectoryName)
           .catch(console.error);
       }
-      return await this.getParentDirFromId(connection, session, dir.id, mediaOffset, mediaLimit);
+      return await this.getParentDirFromId(connection, session, dir.id, mediaOffset, mediaLimit, mediaSortMethod, mediaSortAscending);
     }
 
     // never scanned (deep indexed), do it and return with it
@@ -124,7 +127,7 @@ export class GalleryManager {
       );
       const connection = await SQLConnection.getConnection();
       const dir = await this.getDirIdAndTime(connection, directoryPath.name, directoryPath.parent);
-      return await this.getParentDirFromId(connection, session, dir.id, mediaOffset, mediaLimit);
+      return await this.getParentDirFromId(connection, session, dir.id, mediaOffset, mediaLimit, mediaSortMethod, mediaSortAscending);
     }
     return ObjectManagers.getInstance().IndexingManager.indexDirectory(relativeDirectoryName);
   }
@@ -407,7 +410,9 @@ export class GalleryManager {
     session: SessionContext,
     partialDirId: number,
     mediaOffset?: number,
-    mediaLimit?: number
+    mediaLimit?: number,
+    mediaSortMethod?: number,
+    mediaSortAscending = true
   ): Promise<ParentDirectoryDTO> {
 
     const query = connection
@@ -475,9 +480,26 @@ export class GalleryManager {
       const offset = Number.isFinite(mediaOffset) && mediaOffset > 0 ? mediaOffset : 0;
       const limit = Number.isFinite(mediaLimit) && mediaLimit > 0 ? Math.min(mediaLimit, 1000) : null;
       if (limit !== null) {
+        const sortDirection = mediaSortAscending ? 'ASC' : 'DESC';
+        switch (mediaSortMethod) {
+          case SortByTypes.Name:
+            mQuery.orderBy('media.name', sortDirection);
+            break;
+          case SortByTypes.Rating:
+            mQuery.orderBy('media.metadata.rating', sortDirection);
+            break;
+          case SortByTypes.FileSize:
+            mQuery.orderBy('media.metadata.fileSize', sortDirection);
+            break;
+          case SortByTypes.Date:
+          case SortByTypes.PersonCount:
+          case SortByTypes.Random:
+          default:
+            mQuery.orderBy('media.metadata.creationDate', sortDirection);
+            break;
+        }
         mQuery
-          .orderBy('media.metadata.creationDate', 'ASC')
-          .addOrderBy('media.id', 'ASC')
+          .addOrderBy('media.id', sortDirection)
           .skip(offset)
           .take(limit);
       }

@@ -90,7 +90,9 @@ export class GalleryMWs {
             10
           ),
           parseInt(req.query[QueryParams.gallery.mediaOffset] as string, 10),
-          parseInt(req.query[QueryParams.gallery.mediaLimit] as string, 10)
+          parseInt(req.query[QueryParams.gallery.mediaLimit] as string, 10),
+          parseInt(req.query[QueryParams.gallery.mediaSortMethod] as string, 10),
+          req.query[QueryParams.gallery.mediaSortAscending] !== '0'
         );
 
       if (directory == null) {

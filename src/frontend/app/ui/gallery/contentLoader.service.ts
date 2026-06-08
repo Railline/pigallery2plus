@@ -13,6 +13,7 @@ import {MediaDTO} from '../../../../common/entities/MediaDTO';
 import {FileDTO} from '../../../../common/entities/FileDTO';
 import {GalleryService} from './gallery.service';
 import {SearchQueryDTO} from '../../../../common/entities/SearchQueryDTO';
+import {SortingMethod} from '../../../../common/entities/SortingMethods';
 
 @Injectable()
 export class ContentLoaderService implements OnDestroy {
@@ -25,6 +26,7 @@ export class ContentLoaderService implements OnDestroy {
   private readonly directoryInitialPageSize = 120;
   private readonly directoryPageSize = 240;
   private loadingMoreDirectory = false;
+  private directorySorting: SortingMethod = Config.Gallery.NavBar.SortingGrouping.defaultPhotoSortingMethod;
 
   constructor(
     private networkService: NetworkService,
@@ -133,6 +135,8 @@ export class ContentLoaderService implements OnDestroy {
     const params: { [key: string]: unknown } = {
       [QueryParams.gallery.mediaOffset]: offset,
       [QueryParams.gallery.mediaLimit]: limit,
+      [QueryParams.gallery.mediaSortMethod]: this.directorySorting.method,
+      [QueryParams.gallery.mediaSortAscending]: this.directorySorting.ascending ? '1' : '0',
     };
 
     if (Config.Sharing.enabled === true && this.shareService.isSharing()) {
@@ -147,6 +151,16 @@ export class ContentLoaderService implements OnDestroy {
     } catch (e) {
       console.error(e);
       return null;
+    }
+  }
+
+  public setDirectorySorting(sorting: SortingMethod, reloadCurrentDirectory = false): void {
+    const changed = !this.directorySorting ||
+      this.directorySorting.method !== sorting.method ||
+      this.directorySorting.ascending !== sorting.ascending;
+    this.directorySorting = {method: sorting.method, ascending: sorting.ascending};
+    if (changed && reloadCurrentDirectory && this.lastContentRequest?.type === 'directory') {
+      this.loadDirectory(this.lastContentRequest.value, true).catch(console.error);
     }
   }
 
