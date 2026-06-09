@@ -20,6 +20,7 @@ export class GallerySortingService {
   public sorting: BehaviorSubject<SortingMethod>;
   public grouping: BehaviorSubject<GroupingMethod>;
   private collator = new Intl.Collator(undefined, {numeric: true});
+  private currentContentKey: string = null;
 
   constructor(
     private galleryCacheService: GalleryCacheService,
@@ -40,19 +41,40 @@ export class GallerySortingService {
       }
     );
     this.galleryService.content.subscribe((c) => {
-      if (c) {
-        const sort = this.galleryCacheService.getSorting(c);
-        const group = this.galleryCacheService.getGrouping(c);
-        const nextSort = sort !== null ? sort : this.getDefaultSorting(c);
-        this.galleryService.setDirectorySorting(nextSort, false);
-        this.sorting.next(nextSort);
-        if (group !== null) {
-          this.grouping.next(group);
-        } else {
-          this.grouping.next(this.getDefaultGrouping(c));
-        }
+      if (!c?.directory && !c?.searchResult) {
+        return;
+      }
+      const contentKey = this.getContentKey(c);
+      if (contentKey === this.currentContentKey) {
+        return;
+      }
+      this.currentContentKey = contentKey;
+
+      const sort = this.galleryCacheService.getSorting(c);
+      const group = this.galleryCacheService.getGrouping(c);
+      const nextSort = sort !== null ? sort : this.getDefaultSorting(c);
+      this.galleryService.setDirectorySorting(nextSort, false);
+      this.sorting.next(nextSort);
+      if (group !== null) {
+        this.grouping.next(group);
+      } else {
+        this.grouping.next(this.getDefaultGrouping(c));
       }
     });
+  }
+
+  private getContentKey(cw: ContentWrapper): string {
+    if (cw?.searchResult?.searchQuery) {
+      return 'search:' + JSON.stringify(cw.searchResult.searchQuery);
+    }
+    if (cw?.directory) {
+      return 'directory:' + (cw.directory.path || '') + '/' + (cw.directory.name || '');
+    }
+    return 'empty';
+  }
+
+  private isSameSorting(a: SortingMethod | GroupingMethod, b: SortingMethod | GroupingMethod): boolean {
+    return !!a && !!b && a.method === b.method && a.ascending === b.ascending;
   }
 
   isDefaultSortingAndGrouping(cw: ContentWrapper): boolean {
@@ -90,10 +112,7 @@ export class GallerySortingService {
     this.galleryService.setDirectorySorting(sorting, true);
     this.sorting.next(sorting);
     if (this.galleryService.content.value) {
-      if (
-        sorting !==
-        this.getDefaultSorting(this.galleryService.content.value)
-      ) {
+      if (!this.isSameSorting(sorting, this.getDefaultSorting(this.galleryService.content.value))) {
         this.galleryCacheService.setSorting(
           this.galleryService.content.value,
           sorting
@@ -109,10 +128,7 @@ export class GallerySortingService {
   setGrouping(grouping: GroupingMethod): void {
     this.grouping.next(grouping);
     if (this.galleryService.content.value) {
-      if (
-        grouping !==
-        this.getDefaultGrouping(this.galleryService.content.value)
-      ) {
+      if (!this.isSameSorting(grouping, this.getDefaultGrouping(this.galleryService.content.value))) {
         this.galleryCacheService.setGrouping(
           this.galleryService.content.value,
           grouping

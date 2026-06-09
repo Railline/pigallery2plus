@@ -146,7 +146,7 @@ export class GalleryCacheService {
 
   private removeSortOrGroup(prefix: string, cw: ContentWrapper): void {
     try {
-      let key = GalleryCacheService.SORTING_PREFIX;
+      let key = prefix;
       if (cw?.searchResult?.searchQuery) {
         key += JSON.stringify(cw.searchResult.searchQuery);
       } else {
