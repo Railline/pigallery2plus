@@ -71,6 +71,7 @@ export class GalleryLightboxComponent implements OnDestroy, OnInit {
   private visibilityTimer: number = null;
   private delayedMediaShow: string = null;
   private activePhotoId: number = null;
+  private scrollBeforeOpen: number = null;
   private gridPhotoQL: QueryList<GalleryPhotoComponent>;
   private subscription: {
     photosChange: Subscription;
@@ -188,11 +189,9 @@ export class GalleryLightboxComponent implements OnDestroy, OnInit {
           if (index !== -1) {
             this.activePhotoId = index;
             this.updateActivePhoto(this.activePhotoId);
-            // if the photo is not available anymore, navigate to the first one.
-          } else if (this.gridPhotoQL.length > 0) {
-            if (this.status === LightboxStates.Open) {
-              this.navigateToPhoto(0);
-            }
+            // if the photo is temporarily not rendered, wait for the grid instead of jumping to the first one.
+          } else if (this.status === LightboxStates.Open) {
+            this.delayedMediaShow = id;
           }
         }
         if (this.delayedMediaShow) {
@@ -241,6 +240,7 @@ export class GalleryLightboxComponent implements OnDestroy, OnInit {
       this.controls.resetZoom();
     }
     this.status = LightboxStates.Opening;
+    this.scrollBeforeOpen = PageHelper.ScrollY;
     const selectedPhoto = this.findPhotoComponent(photo);
     if (selectedPhoto === null) {
       throw new Error('Can\'t find Photo');
@@ -515,6 +515,7 @@ export class GalleryLightboxComponent implements OnDestroy, OnInit {
       this.calcLightBoxPhotoDimension(this.activePhoto.gridMedia.media),
       this.activePhoto.getDimension()
     );
+    const restoreScrollY = this.scrollBeforeOpen;
     this.animateLightbox(
       {
         top: 0,
@@ -527,7 +528,13 @@ export class GalleryLightboxComponent implements OnDestroy, OnInit {
       this.status = LightboxStates.Closed;
       this.activePhoto = null;
       this.activePhotoId = null;
+      this.scrollBeforeOpen = null;
       this.overlayService.hideOverlay('lightbox');
+      if (restoreScrollY !== null) {
+        window.setTimeout(() => {
+          PageHelper.ScrollY = Math.min(restoreScrollY, PageHelper.MaxScrollY);
+        }, 0);
+      }
     });
 
     this.hideInfoPanel(false);
