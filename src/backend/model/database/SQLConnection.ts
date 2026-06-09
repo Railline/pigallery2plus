@@ -84,6 +84,7 @@ export class SQLConnection {
       );
       this.connection = await this.createConnection(options);
       await SQLConnection.schemeSync(this.connection);
+      await SQLConnection.ensurePerformanceIndexes(this.connection);
     }
     return this.connection;
   }
@@ -263,6 +264,43 @@ export class SQLConnection {
         'Could not move users to the new db scheme, deleting them. Details:' +
         e.toString()
       );
+    }
+  }
+
+  private static async ensurePerformanceIndexes(connection: Connection): Promise<void> {
+    const indexDefinitions = [
+      {table: 'media_entity', name: 'idx_codex_media_dir_date_id', columns: ['directoryId', 'metadataCreationdate', 'id']},
+      {table: 'media_entity', name: 'idx_codex_media_dir_name_id', columns: ['directoryId', 'name', 'id']},
+      {table: 'media_entity', name: 'idx_codex_media_dir_size_id', columns: ['directoryId', 'metadataFilesize', 'id']},
+      {table: 'media_entity', name: 'idx_codex_media_dir_rating_id', columns: ['directoryId', 'metadataRating', 'id']},
+      {table: 'directory_entity', name: 'idx_codex_directory_parent_name', columns: ['parentId', 'name']},
+    ];
+
+    try {
+      if (Config.Database.type === DatabaseType.mysql) {
+        for (const idx of indexDefinitions) {
+          const existing = await connection.query(
+            'SELECT 1 FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ? LIMIT 1',
+            [idx.table, idx.name]
+          );
+          if (existing.length > 0) {
+            continue;
+          }
+          const columns = idx.columns.map(c => '\`' + c + '\`').join(', ');
+          Logger.info(LOG_TAG, 'Creating performance index: ' + idx.name);
+          await connection.query('CREATE INDEX \`' + idx.name + '\` ON \`' + idx.table + '\` (' + columns + ')');
+        }
+        return;
+      }
+
+      if (Config.Database.type === DatabaseType.sqlite) {
+        for (const idx of indexDefinitions) {
+          const columns = idx.columns.map(c => '"' + c + '"').join(', ');
+          await connection.query('CREATE INDEX IF NOT EXISTS "' + idx.name + '" ON "' + idx.table + '" (' + columns + ')');
+        }
+      }
+    } catch (e) {
+      Logger.warn(LOG_TAG, 'Could not create one or more performance indexes: ' + e.toString());
     }
   }
 

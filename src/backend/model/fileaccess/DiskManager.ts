@@ -1,5 +1,6 @@
 import {Dirent, promises as fsp, Stats} from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import {DirectoryPathDTO, ParentDirectoryDTO, SubDirectoryDTO,} from '../../../common/entities/DirectoryDTO';
 import {PhotoDTO} from '../../../common/entities/PhotoDTO';
 import {ProjectPath} from '../../ProjectPath';
@@ -56,6 +57,22 @@ export class DiskManager {
       return '.';
     }
     return path.basename(dirPath);
+  }
+
+
+  private static readonly scanConcurrency = Math.max(2, Math.min(8, os.cpus().length - 1));
+
+  private static async mapLimited<T, R>(items: T[], limit: number, worker: (item: T, index: number) => Promise<R>): Promise<R[]> {
+    const results = new Array<R>(items.length);
+    let nextIndex = 0;
+    const workers = new Array(Math.min(limit, items.length)).fill(null).map(async (): Promise<void> => {
+      while (nextIndex < items.length) {
+        const currentIndex = nextIndex++;
+        results[currentIndex] = await worker(items[currentIndex], currentIndex);
+      }
+    });
+    await Promise.all(workers);
+    return results;
   }
 
   private static globToRegex(glob: string): RegExp {
@@ -182,7 +199,12 @@ export class DiskManager {
     const list = await fsp.readdir(absoluteDirectoryName, {withFileTypes: true});
     let count = 0;
 
-    for (const dirent of list) {
+    const scanEntry = async (dirent: Dirent): Promise<{
+      directory?: SubDirectoryDTO;
+      media?: PhotoDTO | VideoDTO;
+      metaFile?: FileDTO;
+      stopCoverScan?: boolean;
+    }> => {
       const file = dirent.name;
       count++;
 
@@ -206,18 +228,18 @@ export class DiskManager {
               parentDirAbsoluteName: absoluteDirectoryName
             }))
           ) {
-            continue;
+            return {};
           }
 
           // create cover directory
-          const d = (await DiskManager.scanDirectory(
-            path.join(relativeDirectoryName, file),
-            {
-              coverOnly: true,
-            }
-          )) as SubDirectoryDTO;
-
-          directory.directories.push(d);
+          return {
+            directory: (await DiskManager.scanDirectory(
+              path.join(relativeDirectoryName, file),
+              {
+                coverOnly: true,
+              }
+            )) as SubDirectoryDTO
+          };
         } catch (err) {
           NotificationManager.warning(
             'Unknown directory reading error, skipping: ' + path.join(relativeDirectoryName, file),
@@ -226,38 +248,24 @@ export class DiskManager {
           console.error(err);
         }
       } else if (DiskManager.excludeFile(file)) {
-        continue;
+        return {};
       } else if (PhotoProcessing.isPhoto(fullFilePath)) {
         try {
           if (settings.noPhoto === true) {
-            continue;
+            return {};
           }
 
-          const photo = {
-            name: file,
-            directory: null,
-            metadata:
-              settings.noMetadata === true
-                ? null
-                : await MetadataLoader.loadPhotoMetadata(fullFilePath),
-          } as PhotoDTO;
-
-          if (!directory.cache.cover) {
-            directory.cache.cover = Utils.clone(photo);
-
-            directory.cache.cover.directory = {
-              path: directory.path,
-              name: directory.name,
-            };
-          }
-          // add the cover photo to the list of media, so it will be saved to the DB
-          // and can be queried to populate covers,
-          // otherwise we do not return media list that is only partial
-          directory.media.push(photo);
-
-          if (settings.coverOnly === true) {
-            break;
-          }
+          return {
+            media: {
+              name: file,
+              directory: null,
+              metadata:
+                settings.noMetadata === true
+                  ? null
+                  : await MetadataLoader.loadPhotoMetadata(fullFilePath),
+            } as PhotoDTO,
+            stopCoverScan: settings.coverOnly === true,
+          };
         } catch (err) {
           NotificationManager.warning('Media loading error, skipping: ' +
             fullFilePath +
@@ -273,16 +281,18 @@ export class DiskManager {
             settings.noVideo === true ||
             settings.coverOnly === true
           ) {
-            continue;
+            return {};
           }
-          directory.media.push({
-            name: file,
-            directory: null,
-            metadata:
-              settings.noMetadata === true
-                ? null
-                : await MetadataLoader.loadVideoMetadata(fullFilePath),
-          } as VideoDTO);
+          return {
+            media: {
+              name: file,
+              directory: null,
+              metadata:
+                settings.noMetadata === true
+                  ? null
+                  : await MetadataLoader.loadVideoMetadata(fullFilePath),
+            } as VideoDTO
+          };
         } catch (e) {
           Logger.warn(
             'Media loading error, skipping: ' +
@@ -299,13 +309,15 @@ export class DiskManager {
             settings.noMetaFile === true ||
             settings.coverOnly === true
           ) {
-            continue;
+            return {};
           }
 
-          directory.metaFile.push({
-            name: file,
-            directory: null,
-          } as FileDTO);
+          return {
+            metaFile: {
+              name: file,
+              directory: null,
+            } as FileDTO
+          };
         } catch (e) {
           Logger.warn(
             'Metafile loading error, skipping: ' +
@@ -313,6 +325,50 @@ export class DiskManager {
             ', reason: ' +
             e.toString()
           );
+        }
+      }
+      return {};
+    };
+
+    const scanResults = settings.coverOnly === true
+      ? []
+      : await DiskManager.mapLimited(list, DiskManager.scanConcurrency, scanEntry);
+
+    if (settings.coverOnly === true) {
+      for (const dirent of list) {
+        const result = await scanEntry(dirent);
+        if (result.media) {
+          directory.media.push(result.media);
+          directory.cache.cover = Utils.clone(result.media);
+          directory.cache.cover.directory = {
+            path: directory.path,
+            name: directory.name,
+          };
+        }
+        if (result.stopCoverScan === true) {
+          break;
+        }
+      }
+    } else {
+      for (const result of scanResults) {
+        if (result.directory) {
+          directory.directories.push(result.directory);
+        }
+        if (result.media) {
+          if (!directory.cache.cover) {
+            directory.cache.cover = Utils.clone(result.media);
+            directory.cache.cover.directory = {
+              path: directory.path,
+              name: directory.name,
+            };
+          }
+          // add the cover photo to the list of media, so it will be saved to the DB
+          // and can be queried to populate covers,
+          // otherwise we do not return media list that is only partial
+          directory.media.push(result.media);
+        }
+        if (result.metaFile) {
+          directory.metaFile.push(result.metaFile);
         }
       }
     }
