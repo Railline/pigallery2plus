@@ -105,19 +105,28 @@ export class ContentLoaderService implements OnDestroy {
       return;
     }
 
+    const requestDirectory = this.lastContentRequest.value;
     const current = this.content.value;
     const page = current?.directory?.mediaPage;
     if (!current?.directory || !page?.hasMore) {
       return;
     }
 
+    const offset = Math.max(
+      current.directory.media?.length || 0,
+      (page.offset || 0) + (page.limit || 0)
+    );
+
     this.loadingMoreDirectory = true;
     try {
       const cw = await this.loadDirectoryPage(
-        this.lastContentRequest.value,
-        current.directory.media.length,
+        requestDirectory,
+        offset,
         this.directoryPageSize
       );
+      if (this.lastContentRequest?.type !== 'directory' || this.lastContentRequest.value !== requestDirectory) {
+        return;
+      }
       if (!cw?.directory?.media?.length) {
         return;
       }
@@ -127,13 +136,44 @@ export class ContentLoaderService implements OnDestroy {
         return;
       }
 
+      const latest = this.content.value;
+      if (!latest?.directory) {
+        return;
+      }
+
+      const mediaKey = (media: MediaDTO): string =>
+        (media.directory?.path || '') + '/' + (media.directory?.name || '') + '/' + media.name;
+      const seen = new Set((latest.directory.media || []).map(mediaKey));
+      const newMedia = nextContent.directory.media.filter((media) => {
+        const key = mediaKey(media);
+        if (seen.has(key)) {
+          return false;
+        }
+        seen.add(key);
+        return true;
+      });
+      if (newMedia.length === 0) {
+        const mediaPage = nextContent.directory.mediaPage || page;
+        this.content.next({
+          ...latest,
+          directory: {
+            ...latest.directory,
+            mediaPage: {
+              ...mediaPage,
+              hasMore: false,
+            },
+          },
+        });
+        return;
+      }
+
       const mergedDirectory = {
-        ...current.directory,
-        media: current.directory.media.concat(nextContent.directory.media),
+        ...latest.directory,
+        media: (latest.directory.media || []).concat(newMedia),
         mediaPage: nextContent.directory.mediaPage,
       };
       this.content.next({
-        ...current,
+        ...latest,
         directory: mergedDirectory,
       });
     } finally {
