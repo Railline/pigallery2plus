@@ -86,6 +86,7 @@ export class GalleryComponent implements OnInit, OnDestroy {
   private readonly feedBatchMediaCount = 240;
   private readonly feedScrollThresholdPx = 1800;
   private autoLoadMoreScheduled = false;
+  private currentFeedKey: string = null;
   private subscription: { [key: string]: Subscription } = {
     content: null,
     route: null,
@@ -270,15 +271,22 @@ export class GalleryComponent implements OnInit, OnDestroy {
     if (!content) {
       return;
     }
+    const feedKey = this.getCurrentFeedKey();
+    const feedChanged = this.currentFeedKey !== feedKey;
     const previousLoadedMediaCount = this.countMedia(this.directoryContent?.mediaGroups);
     const previousVisibleMediaCount = this.visibleMediaCount || this.feedInitialMediaCount;
     const loadedMediaCount = this.countMedia(content.mediaGroups);
 
     this.directoryContent = content;
+    this.currentFeedKey = feedKey;
     this.totalMediaCount = this.contentLoader.content.value?.directory?.mediaPage?.total || loadedMediaCount;
-    this.visibleMediaCount = loadedMediaCount > previousLoadedMediaCount
-      ? Math.min(loadedMediaCount, previousVisibleMediaCount + this.feedBatchMediaCount)
-      : Math.min(this.feedInitialMediaCount, loadedMediaCount);
+    if (feedChanged || previousLoadedMediaCount === 0) {
+      this.visibleMediaCount = Math.min(this.feedInitialMediaCount, loadedMediaCount);
+    } else if (loadedMediaCount > previousLoadedMediaCount) {
+      this.visibleMediaCount = Math.min(loadedMediaCount, previousVisibleMediaCount + this.feedBatchMediaCount);
+    } else {
+      this.visibleMediaCount = Math.min(previousVisibleMediaCount, loadedMediaCount);
+    }
     this.updateVisibleDirectoryContent();
     this.scheduleLoadMoreIfNeeded();
   };
@@ -326,6 +334,17 @@ export class GalleryComponent implements OnInit, OnDestroy {
     }
     this.visibleMediaCount = nextLimit;
     this.updateVisibleDirectoryContent();
+  }
+
+  private getCurrentFeedKey(): string {
+    const content = this.contentLoader.content.value;
+    if (content?.directory) {
+      return 'directory:' + (content.directory.path || '') + '/' + (content.directory.name || '');
+    }
+    if (content?.searchResult) {
+      return 'search:' + JSON.stringify(content.searchResult.searchQuery || {});
+    }
+    return 'empty';
   }
 
   private updateVisibleDirectoryContent(): void {
