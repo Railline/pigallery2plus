@@ -103,7 +103,7 @@ export class GalleryGridComponent
     setTimeout(() => {
       this.updateContainerDimensions();
       this.mergeNewPhotos();
-      this.renderMinimalPhotos();
+      this.renderPhotos(this.countInputMedia());
       setTimeout(() => {
         this.containerMinHeight = 0; // remove min height after new photos are rendered
       }, 0);
@@ -390,6 +390,13 @@ export class GalleryGridComponent
 
   getNumberOfRenderedMedia() {
     return this.mediaToRender.reduce((c, mg) => c + mg.media.length, 0);
+  }
+
+  private countInputMedia(): number {
+    if (!this.mediaGroups) {
+      return 0;
+    }
+    return this.mediaGroups.reduce((count, group) => count + group.media.length, 0);
   }
 
   /*

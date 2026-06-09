@@ -278,7 +278,7 @@ export class GallerySortingService {
 
                 // group
                 if (dirContent.media) {
-                  const mCopy = dirContent.media;
+                  const mCopy = dirContent.media.slice();
                   this.sortMedia(grouping, mCopy);
                   const groupFN = this.getGroupByNameFn(grouping);
 
