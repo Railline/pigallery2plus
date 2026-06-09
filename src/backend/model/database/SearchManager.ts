@@ -1058,19 +1058,19 @@ export class SearchManager {
                 textParam['text_exact' + queryId] = `${globPattern}`;
 
                 qb[whereFN](
-                  `${fieldName} ${op} :CtextC${queryId}${esc} COLLATE ${SQL_COLLATE}`,
+                  `${fieldName} ${op} :CtextC${queryId} COLLATE ${SQL_COLLATE}${esc}`,
                   textParam
                 );
                 qb[whereFN](
-                  `${fieldName} ${op} :Ctext${queryId}${esc} COLLATE ${SQL_COLLATE}`,
+                  `${fieldName} ${op} :Ctext${queryId} COLLATE ${SQL_COLLATE}${esc}`,
                   textParam
                 );
                 qb[whereFN](
-                  `${fieldName} ${op} :textC${queryId}${esc} COLLATE ${SQL_COLLATE}`,
+                  `${fieldName} ${op} :textC${queryId} COLLATE ${SQL_COLLATE}${esc}`,
                   textParam
                 );
                 qb[whereFN](
-                  `${fieldName} ${op} :text_exact${queryId}${esc} COLLATE ${SQL_COLLATE}`,
+                  `${fieldName} ${op} :text_exact${queryId} COLLATE ${SQL_COLLATE}${esc}`,
                   textParam
                 );
               })
