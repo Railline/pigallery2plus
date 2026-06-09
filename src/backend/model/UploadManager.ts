@@ -14,13 +14,29 @@ export interface UploadError {
 }
 
 export class UploadManager {
+  private static safeJoin(basePath: string, ...segments: string[]): string {
+    const target = path.resolve(basePath, ...segments);
+    const base = path.resolve(basePath);
+    if (target !== base && !target.startsWith(base + path.sep)) {
+      throw new Error('Invalid upload path');
+    }
+    return target;
+  }
+
+  private static safeOriginalName(originalName: string): string {
+    const name = path.basename(originalName || '').replace(/[\x00-\x1f\x7f]/g, '').trim();
+    if (!name || name === '.' || name === '..' || name.includes('/') || name.includes('\\')) {
+      throw new Error('Invalid file name');
+    }
+    return name;
+  }
 
   public async saveFiles(directory: string, files: Express.Multer.File[]): Promise<UploadError[]> {
     if (Config.Upload.enabled === false) {
       throw new Error('Upload is disabled');
     }
     const relativeDir = directory || '';
-    const fullDirPath = path.join(ProjectPath.ImageFolder, relativeDir);
+    const fullDirPath = UploadManager.safeJoin(ProjectPath.ImageFolder, relativeDir);
 
     if (Config.Upload.enforcedDirectoryConfig === true) {
       const hasUploadConf = Object.keys(PG2ConfMap.upload).some(filename => {
@@ -48,15 +64,15 @@ export class UploadManager {
 
   public async saveFile(directory: string, file: Express.Multer.File): Promise<void> {
     const relativeDir = directory || '';
-    const fullDirPath = path.join(ProjectPath.ImageFolder, relativeDir);
+    const fullDirPath = UploadManager.safeJoin(ProjectPath.ImageFolder, relativeDir);
+    const safeName = UploadManager.safeOriginalName(file.originalname);
 
-
-    const extension = path.extname(file.originalname).toLowerCase().substring(1);
+    const extension = path.extname(safeName).toLowerCase().substring(1);
     if (!this.isSupportedExtension(extension)) {
       throw new Error('Unsupported file format: ' + extension);
     }
 
-    const fullFilePath = path.join(fullDirPath, file.originalname);
+    const fullFilePath = UploadManager.safeJoin(fullDirPath, safeName);
 
     if (fs.existsSync(fullFilePath)) {
       throw new FileAlreadyExists('File already exists: ' + fullFilePath, file.originalname);

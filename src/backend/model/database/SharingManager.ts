@@ -4,7 +4,7 @@ import {SharingEntity} from './enitites/SharingEntity';
 import {Config} from '../../../common/config/private/Config';
 import {PasswordHelper} from '../PasswordHelper';
 import {DeleteResult, SelectQueryBuilder} from 'typeorm';
-import {UserDTO, UserRoles} from '../../../common/entities/UserDTO';
+import {UserDTO} from '../../../common/entities/UserDTO';
 import {SearchQueryDTO} from '../../../common/entities/SearchQueryDTO';
 import {SearchQueryUtils} from '../../../common/SearchQueryUtils';
 import {UserEntity} from './enitites/UserEntity';
@@ -20,13 +20,6 @@ export class SharingManager {
     }
     if (!creator && user?.name) {
       creator = await userRepository.findOneBy({name: user.name});
-    }
-    if (!creator) {
-      creator = await userRepository
-        .createQueryBuilder('user')
-        .where('user.role >= :role', {role: UserRoles.Admin})
-        .orderBy('user.id', 'ASC')
-        .getOne();
     }
     if (!creator) {
       throw new Error('Sharing creator user does not exist');

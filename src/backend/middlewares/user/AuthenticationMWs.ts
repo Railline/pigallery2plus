@@ -206,7 +206,7 @@ export class AuthenticationMWs {
             sharing.password) &&
           !PasswordHelper.comparePassword(password, sharing.password))
       ) {
-        Logger.warn(LOG_TAG, 'Failed login from IP `' + req.ip + '` with sharing:' + sharing.sharingKey + ', bad password');
+        Logger.warn(LOG_TAG, 'Failed login from IP `' + req.ip + '` with sharing:' + sharingKey + ', bad password');
         res.status(401);
         return next(new ErrorDTO(ErrorCodes.CREDENTIAL_NOT_FOUND));
       }

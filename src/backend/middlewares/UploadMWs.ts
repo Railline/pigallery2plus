@@ -4,7 +4,15 @@ import {ErrorCodes, ErrorDTO} from '../../common/entities/Error';
 import multer = require('multer');
 
 const storage = multer.memoryStorage();
-const upload = multer({storage}).array('files');
+const upload = multer({
+  storage,
+  limits: {
+    fileSize: 250 * 1024 * 1024,
+    files: 50,
+    fields: 20,
+    parts: 100,
+  },
+}).array('files');
 
 export class UploadMWs {
   public static async upload(

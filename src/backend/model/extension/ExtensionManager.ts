@@ -3,7 +3,7 @@ import {Config} from '../../../common/config/private/Config';
 import * as fs from 'fs';
 import * as path from 'path';
 import {pipeline} from 'stream/promises';
-import {Readable} from 'stream';
+import {Readable, Transform} from 'stream';
 import {IObjectManager} from '../database/IObjectManager';
 import {Logger} from '../../Logger';
 import {IExtensionEvents, IExtensionObject} from './IExtension';
@@ -27,6 +27,22 @@ const exec = util.promisify(require('child_process').exec);
 const LOG_TAG = '[ExtensionManager]';
 
 export class ExtensionManager implements IObjectManager {
+  private static safeExtensionName(name: string): string {
+    if (!/^[a-zA-Z0-9._-]+$/.test(name || '') || name.includes('..')) {
+      throw new Error('Invalid extension name');
+    }
+    return name;
+  }
+
+  private static ensureInside(basePath: string, targetPath: string): string {
+    const base = path.resolve(basePath);
+    const target = path.resolve(targetPath);
+    if (target !== base && !target.startsWith(base + path.sep)) {
+      throw new Error('Invalid extension path');
+    }
+    return target;
+  }
+
 
   public static EXTENSION_API_PATH = Config.Server.apiPath + '/extension';
   public repository: ExtensionRepository = new ExtensionRepository();
@@ -83,6 +99,7 @@ export class ExtensionManager implements IObjectManager {
    * @param extensionId - The repository extension ID (not to be confused with the unique internal extensionId used in extObjects)
    */
   public async installExtension(extensionId: string): Promise<void> {
+    extensionId = ExtensionManager.safeExtensionName(extensionId);
     if (!Config.Extensions.enabled) {
       throw new Error('Extensions are disabled');
     }
@@ -141,6 +158,7 @@ export class ExtensionManager implements IObjectManager {
    * @param configKey - The key used in Config.Extensions.extensions map (typically the folder name)
    */
   public async reloadExtension(configKey: string): Promise<void> {
+    configKey = ExtensionManager.safeExtensionName(configKey);
     if (!Config.Extensions.enabled) {
       throw new Error('Extensions are disabled');
     }
@@ -174,6 +192,7 @@ export class ExtensionManager implements IObjectManager {
    * @param configKey - The key used in Config.Extensions.extensions map (typically the folder name)
    */
   public async deleteExtension(configKey: string): Promise<void> {
+    configKey = ExtensionManager.safeExtensionName(configKey);
     if (!Config.Extensions.enabled) {
       throw new Error('Extensions are disabled');
     }
@@ -198,7 +217,7 @@ export class ExtensionManager implements IObjectManager {
     }
 
     // Remove the extension folder
-    const extPath = path.join(ProjectPath.ExtensionFolder, configKey);
+    const extPath = ExtensionManager.ensureInside(ProjectPath.ExtensionFolder, path.join(ProjectPath.ExtensionFolder, configKey));
     if (fs.existsSync(extPath)) {
       Logger.silly(LOG_TAG, `Removing extension folder: ${extPath}`);
       fs.rmSync(extPath, { recursive: true, force: true });
@@ -272,6 +291,7 @@ export class ExtensionManager implements IObjectManager {
    * @returns Promise that resolves when the extension is initialized
    */
   private async initSingleExtension(configKey: string): Promise<void> {
+    configKey = ExtensionManager.safeExtensionName(configKey);
     const extConf: ServerExtensionsEntryConfig = Config.Extensions.extensions[configKey] as ServerExtensionsEntryConfig;
     if (!extConf) {
       Logger.silly(LOG_TAG, `Skipping ${configKey} initiation. Extension config is missing.`);
@@ -285,7 +305,8 @@ export class ExtensionManager implements IObjectManager {
       return;
     }
 
-    const extPath = path.join(ProjectPath.ExtensionFolder, folderName);
+    const safeFolderName = ExtensionManager.safeExtensionName(folderName);
+    const extPath = ExtensionManager.ensureInside(ProjectPath.ExtensionFolder, path.join(ProjectPath.ExtensionFolder, safeFolderName));
     const serverExtPath = path.join(extPath, 'server.js');
     const packageJsonPath = path.join(extPath, 'package.json');
 
@@ -361,24 +382,55 @@ export class ExtensionManager implements IObjectManager {
   }
 
   private async downloadFile(url: string, outputPath: string): Promise<void> {
-    const response = await fetch(url);
+    const parsedUrl = new URL(url);
+    if (parsedUrl.protocol !== 'https:') {
+      throw new Error('Extension downloads must use HTTPS');
+    }
+
+    outputPath = ExtensionManager.ensureInside(ProjectPath.ExtensionFolder, outputPath);
+    const maxBytes = 50 * 1024 * 1024;
+    let downloadedBytes = 0;
+    const response = await fetch(parsedUrl);
 
     if (!response.ok || !response.body) {
       throw new Error(`Unexpected response ${response.statusText}`);
     }
 
     const nodeReadable = Readable.fromWeb(response.body as any);
+    const sizeLimiter = new Transform({
+      transform(chunk, encoding, callback) {
+        downloadedBytes += chunk.length;
+        if (downloadedBytes > maxBytes) {
+          callback(new Error('Extension download is too large'));
+          return;
+        }
+        callback(null, chunk);
+      }
+    });
 
-    // Pipe the response body to a file
-    await pipeline(nodeReadable, fs.createWriteStream(outputPath));
+    try {
+      await pipeline(nodeReadable, sizeLimiter, fs.createWriteStream(outputPath));
+    } catch (e) {
+      if (fs.existsSync(outputPath)) {
+        fs.unlinkSync(outputPath);
+      }
+      throw e;
+    }
   }
 
   private async unzipFile(zipFilePath: string, outputPath: string): Promise<void> {
     try {
       // Extract to temp first
-      const tempExtractPath = path.join(outputPath, '__temp_unzip');
+      outputPath = ExtensionManager.ensureInside(ProjectPath.ExtensionFolder, outputPath);
+      const tempExtractPath = ExtensionManager.ensureInside(outputPath, path.join(outputPath, '__temp_unzip'));
 
       const zip = new AdmZip(zipFilePath);
+      for (const entry of zip.getEntries()) {
+        const entryPath = ExtensionManager.ensureInside(tempExtractPath, path.join(tempExtractPath, entry.entryName));
+        if (entryPath.includes(path.sep + '..' + path.sep)) {
+          throw new Error('Invalid zip entry path');
+        }
+      }
       zip.extractAllTo(tempExtractPath, true);
 
       // Flatten directory

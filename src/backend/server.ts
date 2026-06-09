@@ -19,6 +19,7 @@ import {QueryParams} from '../common/QueryParams';
 import {ConfigClassBuilder} from 'typeconfig/node';
 import {ConfigClassOptions} from 'typeconfig/src/decorators/class/IConfigClass';
 import {ServerConfig} from '../common/config/private/PrivateConfig';
+import {SecurityMWs} from './middlewares/SecurityMWs';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const session = require('cookie-session');
@@ -57,6 +58,7 @@ export class Server {
 
   async init(listen = true): Promise<void> {
     this.app = express();
+    this.app.disable('x-powered-by');
     LoggerRouter.route(this.app);
     this.app.set('view engine', 'ejs');
 
@@ -88,6 +90,9 @@ export class Server {
       session({
         name: CookieNames.session,
         keys: Config.Server.sessionSecret,
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: Config.Server.publicUrl.startsWith('https://'),
       })
     );
 
@@ -98,13 +103,9 @@ export class Server {
     this.app.use(express.json());
     this.app.use(cookieParser());
 
-    // enable token generation but do not check it
-    this.app.post(
-      [Config.Server.apiPath + '/user/login', Config.Server.apiPath + '/share/login'],
-    );
-    this.app.get(
-      [Config.Server.apiPath + '/user/me', Config.Server.apiPath + '/share/:' + QueryParams.gallery.sharingKey_params],
-    );
+    this.app.use(SecurityMWs.securityHeaders);
+    this.app.use(SecurityMWs.csrfOriginCheck);
+    this.app.use([Config.Server.apiPath + '/user/login', Config.Server.apiPath + '/share/login'], SecurityMWs.loginRateLimit);
 
     PhotoProcessing.init();
     Localizations.init();
