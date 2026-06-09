@@ -1,7 +1,7 @@
 <div #gridContainer [style.min-height]="containerMinHeight+'px'"
      [style.width]="renderDelayTimer ? containerWidth+'px' : ''">
   <ng-container *ngIf="mediaToRender?.length > 0">
-    <ng-container *ngFor="let group of mediaToRender">
+    <ng-container *ngFor="let group of mediaToRender; trackBy: trackByGroup">
       <div class="d-inline-block">
         <ng-container *ngIf="group.name">
           <ng-container [ngSwitch]="sortingService.grouping.value.method">
@@ -28,7 +28,7 @@
         </ng-container>
         <div class="media-grid">
           <app-gallery-grid-photo
-            *ngFor="let gridPhoto of group.media"
+            *ngFor="let gridPhoto of group.media; trackBy: trackByGridPhoto"
             (click)="photoClicked(gridPhoto.media)"
             [gridMedia]="gridPhoto"
             [style.width.px]="gridPhoto.renderWidth"

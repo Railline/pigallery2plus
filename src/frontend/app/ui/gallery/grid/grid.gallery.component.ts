@@ -204,6 +204,24 @@ export class GalleryGridComponent
     }, 100);
   }
 
+
+  trackByGroup(index: number, group: GridMediaGroup): string {
+    const firstMedia = group.media?.[0]?.media;
+    const groupDate = group.date instanceof Date ? group.date.getTime() : (group.date || '');
+    return (group.name || '') + ':' + groupDate + ':' + (firstMedia ? this.mediaKey(firstMedia) : index);
+  }
+
+  trackByGridPhoto(index: number, gridPhoto: GridMedia): string {
+    return this.mediaKey(gridPhoto.media) || index.toString();
+  }
+
+  private mediaKey(media: MediaDTO): string {
+    if (!media) {
+      return '';
+    }
+    return (media.directory?.path || '') + '/' + (media.directory?.name || '') + '/' + media.name;
+  }
+
   photoClicked(media: MediaDTO): void {
     this.router.navigate([], {
       queryParams: this.queryService.getParams({media}),
