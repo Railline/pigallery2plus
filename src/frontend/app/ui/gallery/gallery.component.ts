@@ -60,10 +60,7 @@ export class GalleryComponent implements OnInit, OnDestroy {
   @ViewChild(GalleryGridComponent, {static: false})
   grid: GalleryGridComponent;
   @ViewChild('feedProgress', {static: false})
-  set feedProgressRef(feedProgress: ElementRef<HTMLElement>) {
-    this.feedProgress = feedProgress;
-    this.observeFeedProgress();
-  }
+  feedProgress: ElementRef<HTMLElement>;
 
   public showSearchBar = false;
   public showShare = false;
@@ -88,14 +85,7 @@ export class GalleryComponent implements OnInit, OnDestroy {
   private readonly feedInitialMediaCount = 120;
   private readonly feedBatchMediaCount = 240;
   private readonly feedScrollThresholdPx = 1800;
-  private feedProgress: ElementRef<HTMLElement>;
-  private feedObserver: IntersectionObserver = null;
-  private observedFeedProgress: HTMLElement = null;
   private autoLoadMoreScheduled = false;
-  private loadMoreFrameScheduled = false;
-  private directoryPageLoadInFlight = false;
-  private revealLoadedPageOnNextContent = false;
-  private currentFeedKey: string = null;
   private subscription: { [key: string]: Subscription } = {
     content: null,
     route: null,
@@ -164,10 +154,6 @@ export class GalleryComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
-    if (this.feedObserver) {
-      this.feedObserver.disconnect();
-      this.feedObserver = null;
-    }
     if (this.subscription.content !== null) {
       this.subscription.content.unsubscribe();
     }
@@ -240,16 +226,13 @@ export class GalleryComponent implements OnInit, OnDestroy {
   }
 
 
-  @HostListener('window:resize')
-  onWindowResize(): void {
-    this.requestLoadMoreCheck();
-  }
-
   @HostListener('window:scroll')
+  @HostListener('document:scroll')
+  @HostListener('window:resize')
+  @HostListener('window:wheel')
+  @HostListener('window:touchmove')
   onWindowScroll(): void {
-    if (!this.feedObserver) {
-      this.requestLoadMoreCheck();
-    }
+    this.loadMoreIfNearEnd();
   }
 
   private onRoute = async (params: Params): Promise<void> => {
@@ -287,38 +270,28 @@ export class GalleryComponent implements OnInit, OnDestroy {
     if (!content) {
       return;
     }
-    const feedKey = this.getCurrentFeedKey();
-    const feedChanged = this.currentFeedKey !== feedKey;
     const previousLoadedMediaCount = this.countMedia(this.directoryContent?.mediaGroups);
     const previousVisibleMediaCount = this.visibleMediaCount || this.feedInitialMediaCount;
     const loadedMediaCount = this.countMedia(content.mediaGroups);
 
     this.directoryContent = content;
-    this.currentFeedKey = feedKey;
     this.totalMediaCount = this.contentLoader.content.value?.directory?.mediaPage?.total || loadedMediaCount;
-    if (feedChanged || previousLoadedMediaCount === 0) {
-      this.visibleMediaCount = Math.min(this.feedInitialMediaCount, loadedMediaCount);
-    } else if (loadedMediaCount > previousLoadedMediaCount) {
-      const nextVisibleCount = this.revealLoadedPageOnNextContent
-        ? previousVisibleMediaCount + this.feedBatchMediaCount
-        : previousVisibleMediaCount;
-      this.visibleMediaCount = Math.min(loadedMediaCount, nextVisibleCount);
-      this.revealLoadedPageOnNextContent = false;
-    } else {
-      this.visibleMediaCount = Math.min(previousVisibleMediaCount, loadedMediaCount);
-    }
+    this.visibleMediaCount = loadedMediaCount > previousLoadedMediaCount
+      ? Math.min(loadedMediaCount, previousVisibleMediaCount + this.feedBatchMediaCount)
+      : Math.min(this.feedInitialMediaCount, loadedMediaCount);
     this.updateVisibleDirectoryContent();
+    this.scheduleLoadMoreIfNeeded();
   };
 
-  private requestLoadMoreCheck(): void {
-    if (this.autoLoadMoreScheduled || this.loadMoreFrameScheduled) {
+  private scheduleLoadMoreIfNeeded(): void {
+    if (this.autoLoadMoreScheduled) {
       return;
     }
-    this.loadMoreFrameScheduled = true;
-    window.requestAnimationFrame(() => {
-      this.loadMoreFrameScheduled = false;
+    this.autoLoadMoreScheduled = true;
+    window.setTimeout(() => {
+      this.autoLoadMoreScheduled = false;
       this.loadMoreIfNearEnd();
-    });
+    }, 0);
   }
 
   private loadMoreIfNearEnd(): void {
@@ -332,7 +305,7 @@ export class GalleryComponent implements OnInit, OnDestroy {
       this.extendVisibleMedia();
       return;
     }
-    this.loadNextDirectoryPage().catch(console.error);
+    this.contentLoader.loadMoreCurrentDirectory().catch(console.error);
   }
 
   private isNearFeedEnd(): boolean {
@@ -353,54 +326,6 @@ export class GalleryComponent implements OnInit, OnDestroy {
     }
     this.visibleMediaCount = nextLimit;
     this.updateVisibleDirectoryContent();
-  }
-
-  private async loadNextDirectoryPage(): Promise<void> {
-    if (this.directoryPageLoadInFlight) {
-      return;
-    }
-    this.directoryPageLoadInFlight = true;
-    this.revealLoadedPageOnNextContent = true;
-    try {
-      await this.contentLoader.loadMoreCurrentDirectory();
-    } finally {
-      this.directoryPageLoadInFlight = false;
-    }
-  }
-
-  private observeFeedProgress(): void {
-    if (this.observedFeedProgress) {
-      this.feedObserver?.unobserve(this.observedFeedProgress);
-      this.observedFeedProgress = null;
-    }
-    const progressElement = this.feedProgress?.nativeElement;
-    if (!progressElement || typeof IntersectionObserver === 'undefined') {
-      return;
-    }
-    if (!this.feedObserver) {
-      this.feedObserver = new IntersectionObserver((entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          this.requestLoadMoreCheck();
-        }
-      }, {
-        root: null,
-        rootMargin: `${this.feedScrollThresholdPx}px 0px`,
-        threshold: 0,
-      });
-    }
-    this.observedFeedProgress = progressElement;
-    this.feedObserver.observe(progressElement);
-  }
-
-  private getCurrentFeedKey(): string {
-    const content = this.contentLoader.content.value;
-    if (content?.directory) {
-      return 'directory:' + (content.directory.path || '') + '/' + (content.directory.name || '');
-    }
-    if (content?.searchResult) {
-      return 'search:' + JSON.stringify(content.searchResult.searchQuery || {});
-    }
-    return 'empty';
   }
 
   private updateVisibleDirectoryContent(): void {
