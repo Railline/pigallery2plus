@@ -66,6 +66,34 @@
       </div>
     </div>
   </div>
+
+  <div class="mb-1 row detail-progress-row" *ngIf="progress.details">
+    <div class="col-12 col-md-2 col-lg-1 detail-label text-md-right text-nowrap">
+      {{progress.details.label}}
+    </div>
+    <div class="progress col-md-8 col-lg-10" [title]="DetailTitle">
+      <div
+        *ngIf="progress.details.all > 0"
+        class="progress-bar detail-progress-bar d-inline-block {{progress.state === JobProgressStates.cancelling ? 'bg-secondary' : 'bg-info'}}"
+        role="progressbar"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        style="min-width: 2em;"
+        [style.width.%]="DetailPercent">
+        {{progress.details.processed + progress.details.skipped}}/{{progress.details.all}}
+      </div>
+      <div
+        *ngIf="progress.details.all === 0"
+        class="progress-bar detail-progress-bar d-inline-block progress-bar-striped progress-bar-animated {{progress.state === JobProgressStates.cancelling ? 'bg-secondary' : 'bg-info'}}"
+        role="progressbar" aria-valuenow="100"
+        aria-valuemin="0" aria-valuemax="100" style="width: 100%">
+        {{progress.details.processed + progress.details.skipped}}
+      </div>
+    </div>
+    <div class="col-12 col-md-2 col-lg-1 detail-count text-end text-md-left text-nowrap">
+      {{DetailPercent | number:'1.0-1'}}%
+    </div>
+  </div>
 </div>
 
 
@@ -91,6 +119,18 @@
         <div class="col-md-3 col-6">
           <ng-container i18n>All</ng-container>
           : {{progress.steps.all}}</div>
+      </div>
+      <div class="row mt-3" *ngIf="progress.details">
+        <div class="col-md-3 col-6">{{progress.details.label}}</div>
+        <div class="col-md-3 col-6">
+          <ng-container i18n>Processed</ng-container>
+          : {{progress.details.processed}}</div>
+        <div class="col-md-3 col-6">
+          <ng-container i18n>Skipped</ng-container>
+          : {{progress.details.skipped}}</div>
+        <div class="col-md-3 col-6">
+          <ng-container i18n>All</ng-container>
+          : {{progress.details.all}}</div>
       </div>
       <div class="row  mt-3 mb-3">
         <div class="progress col-12">

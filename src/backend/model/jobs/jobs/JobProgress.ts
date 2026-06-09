@@ -8,6 +8,7 @@ export class JobProgress {
     processed: 0,
     skipped: 0,
   };
+  private details: {label: string; all: number; processed: number; skipped: number} = null;
   private state = JobProgressStates.running;
   private time = {
     start: Date.now() as number,
@@ -67,6 +68,47 @@ export class JobProgress {
     this.onChange(this);
   }
 
+  setDetails(label: string, all = 0, processed = 0, skipped = 0): void {
+    this.details = {label, all, processed, skipped};
+    this.time.end = Date.now();
+    this.onChange(this);
+  }
+
+  set DetailAll(value: number) {
+    if (!this.details) {
+      return;
+    }
+    this.details.all = value;
+    this.time.end = Date.now();
+    this.onChange(this);
+  }
+
+  get DetailProcessed(): number {
+    return this.details?.processed || 0;
+  }
+
+  set DetailProcessed(value: number) {
+    if (!this.details) {
+      return;
+    }
+    this.details.processed = value;
+    this.time.end = Date.now();
+    this.onChange(this);
+  }
+
+  get DetailSkipped(): number {
+    return this.details?.skipped || 0;
+  }
+
+  set DetailSkipped(value: number) {
+    if (!this.details) {
+      return;
+    }
+    this.details.skipped = value;
+    this.time.end = Date.now();
+    this.onChange(this);
+  }
+
   get State(): JobProgressStates {
     return this.state;
   }
@@ -110,6 +152,7 @@ export class JobProgress {
       },
       logs: this.logs,
       steps: this.steps,
+      ...(this.details && {details: this.details}),
     };
   }
 }

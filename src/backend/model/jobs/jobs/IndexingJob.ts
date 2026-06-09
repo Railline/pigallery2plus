@@ -9,6 +9,8 @@ import {backendTexts} from '../../../../common/BackendTexts';
 import {ParentDirectoryDTO} from '../../../../common/entities/DirectoryDTO';
 import {FileDTO} from '../../../../common/entities/FileDTO';
 import {DiskManager} from '../../fileaccess/DiskManager';
+import {SQLConnection} from '../../database/SQLConnection';
+import {MediaEntity} from '../../database/enitites/MediaEntity';
 import {DynamicConfig} from '../../../../common/entities/DynamicConfig';
 
 
@@ -38,6 +40,13 @@ export class IndexingJob<
   protected async init(): Promise<void> {
     this.directoriesToIndex = [];
     this.directoriesToIndex.push('/');
+    try {
+      const connection = await SQLConnection.getConnection();
+      const totalMedia = await connection.getRepository(MediaEntity).createQueryBuilder('media').getCount();
+      this.Progress.setDetails('Images', totalMedia);
+    } catch (e) {
+      this.Progress.setDetails('Images', 0);
+    }
   }
 
   protected async step(): Promise<boolean> {
@@ -87,6 +96,7 @@ export class IndexingJob<
             await ObjectManagers.getInstance().IndexingManager.indexDirectory(
               directory
             );
+          this.Progress.DetailProcessed = this.Progress.DetailProcessed + (scanned?.media?.length || 0);
         } else {
           this.Progress.log('Skipping. No change for: ' + directory);
           this.Progress.Skipped++;

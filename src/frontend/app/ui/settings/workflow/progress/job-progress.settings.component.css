@@ -11,3 +11,16 @@
 .clickable {
   cursor: pointer;
 }
+
+.detail-progress-row {
+  font-size: .75rem;
+}
+
+.detail-progress-row .progress {
+  height: .75rem;
+}
+
+.detail-label,
+.detail-count {
+  color: var(--bs-secondary-color);
+}

@@ -54,6 +54,22 @@ export class JobProgressComponent implements OnDestroy, OnChanges {
     );
   }
 
+  get DetailTitle(): string {
+    if (!this.progress?.details) {
+      return '';
+    }
+    return this.progress.details.label + ': ' +
+      (this.progress.details.processed + this.progress.details.skipped) +
+      ' / ' + this.progress.details.all;
+  }
+
+  get DetailPercent(): number {
+    if (!this.progress?.details?.all) {
+      return 0;
+    }
+    return ((this.progress.details.processed + this.progress.details.skipped) / this.progress.details.all) * 100;
+  }
+
   get Name(): string {
     if (!this.progress) {
       return '';

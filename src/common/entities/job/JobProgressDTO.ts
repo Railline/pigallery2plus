@@ -21,6 +21,12 @@ export interface JobProgressDTO {
     processed: number;
     skipped: number;
   };
+  details?: {
+    label: string;
+    all: number;
+    processed: number;
+    skipped: number;
+  };
   state: JobProgressStates;
   logs: JobProgressLogDTO[];
   time: {

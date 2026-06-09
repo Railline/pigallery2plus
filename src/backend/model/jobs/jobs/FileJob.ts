@@ -93,6 +93,7 @@ export abstract class FileJob<S extends { indexedOnly?: boolean } = { indexedOnl
         this.Progress.log('Counting files from db');
         Logger.silly(LOG_TAG, 'Counting files from db');
         this.Progress.All = await this.countMediaFromDB();
+        this.Progress.setDetails('Media', this.Progress.All);
         this.Progress.log('Found:' + this.Progress.All);
         Logger.silly(LOG_TAG, 'Found:' + this.Progress.All);
         this.DBProcessing.initiated = true;
@@ -108,11 +109,13 @@ export abstract class FileJob<S extends { indexedOnly?: boolean } = { indexedOnl
     try {
       if ((await this.shouldProcess(filePath)) === true) {
         this.Progress.Processed++;
+        this.Progress.DetailProcessed = this.Progress.Processed;
         this.Progress.log('processing: ' + filePath);
         await this.processFile(filePath);
       } else {
         this.Progress.log('skipping: ' + filePath);
         this.Progress.Skipped++;
+        this.Progress.DetailSkipped = this.Progress.Skipped;
       }
     } catch (e) {
       console.error(e);
@@ -145,6 +148,7 @@ export abstract class FileJob<S extends { indexedOnly?: boolean } = { indexedOnl
       if (skipped > 0) {
         this.Progress.log('batch skipping: ' + skipped);
         this.Progress.Skipped += skipped;
+        this.Progress.DetailSkipped = this.Progress.Skipped;
       }
       for (const item of scannedAndFiltered) {
         this.fileQueue.push(
@@ -163,6 +167,7 @@ export abstract class FileJob<S extends { indexedOnly?: boolean } = { indexedOnl
       if (skipped > 0) {
         this.Progress.log('batch skipping: ' + skipped);
         this.Progress.Skipped += skipped;
+        this.Progress.DetailSkipped = this.Progress.Skipped;
       }
       for (const item of scannedAndFiltered) {
         this.fileQueue.push(
@@ -220,6 +225,7 @@ export abstract class FileJob<S extends { indexedOnly?: boolean } = { indexedOnl
       if (skipped > 0) {
         this.Progress.log('batch skipping: ' + skipped);
         this.Progress.Skipped += skipped;
+        this.Progress.DetailSkipped = this.Progress.Skipped;
       }
       for (const item of scannedAndFiltered) {
         this.fileQueue.push(
@@ -251,6 +257,7 @@ export abstract class FileJob<S extends { indexedOnly?: boolean } = { indexedOnl
       if (skipped > 0) {
         this.Progress.log('batch skipping: ' + skipped);
         this.Progress.Skipped += skipped;
+        this.Progress.DetailSkipped = this.Progress.Skipped;
       }
       for (const item of scannedAndFiltered) {
         this.fileQueue.push(
