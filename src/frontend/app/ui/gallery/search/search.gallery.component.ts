@@ -1,6 +1,6 @@
 import {Component, OnDestroy, TemplateRef} from '@angular/core';
 import {AutoCompleteService} from './autocomplete.service';
-import {ActivatedRoute, Params, Router, RouterLink} from '@angular/router';
+import {ActivatedRoute, Params, Router} from '@angular/router';
 import {Subscription} from 'rxjs';
 import {QueryParams} from '../../../../../common/QueryParams';
 import {MetadataSearchQueryTypes, SearchQueryDTO, SearchQueryTypes, TextSearch,} from '../../../../../common/entities/SearchQueryDTO';
@@ -28,7 +28,6 @@ import {SearchQueryUtils} from '../../../../../common/SearchQueryUtils';
   imports: [
     FormsModule,
     GallerySearchFieldBaseComponent,
-    RouterLink,
     NgIconComponent,
     GallerySearchQueryBuilderComponent,
     NgIf,
@@ -139,9 +138,15 @@ export class GallerySearchComponent implements OnDestroy {
     }
   }
 
-  Search(): void {
+  Search(closeModal = false): void {
+    this.validateRawSearchText();
     this.router
       .navigate(['/search', this.HTMLSearchQuery])
+      .then(() => {
+        if (closeModal && this.searchModalRef) {
+          this.hideSearchModal();
+        }
+      })
       .catch(console.error);
   }
 

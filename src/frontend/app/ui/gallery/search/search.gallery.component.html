@@ -10,7 +10,7 @@
     </app-gallery-search-field-base>
 
     <button class="btn btn-tertiary lh-0" type="button"
-            [routerLink]="['/search', HTMLSearchQuery]">
+            (click)="Search()">
       <ng-icon name="ionSearchOutline"></ng-icon>
     </button>
     <button class="btn btn-tertiary lh-0"  type="button" (click)="openSearchModal(searchModal)">
@@ -51,8 +51,7 @@
           <ng-container i18n>Save</ng-container>
         </button>
         <button class="btn btn-primary" type="button"
-                [routerLink]="['/search', HTMLSearchQuery]"
-                (click)="hideSearchModal()">
+                (click)="Search(true)">
           <ng-icon name="ionSearchOutline" class="me-1"></ng-icon>
           <ng-container i18n>Search</ng-container>
         </button>
