@@ -4,11 +4,36 @@ import {SharingEntity} from './enitites/SharingEntity';
 import {Config} from '../../../common/config/private/Config';
 import {PasswordHelper} from '../PasswordHelper';
 import {DeleteResult, SelectQueryBuilder} from 'typeorm';
-import {UserDTO} from '../../../common/entities/UserDTO';
+import {UserDTO, UserRoles} from '../../../common/entities/UserDTO';
 import {SearchQueryDTO} from '../../../common/entities/SearchQueryDTO';
 import {SearchQueryUtils} from '../../../common/SearchQueryUtils';
+import {UserEntity} from './enitites/UserEntity';
 
 export class SharingManager {
+  private static async resolveCreator(user?: UserDTO): Promise<UserEntity> {
+    const connection = await SQLConnection.getConnection();
+    const userRepository = connection.getRepository(UserEntity);
+    let creator: UserEntity = null;
+
+    if (user?.id != null) {
+      creator = await userRepository.findOneBy({id: user.id});
+    }
+    if (!creator && user?.name) {
+      creator = await userRepository.findOneBy({name: user.name});
+    }
+    if (!creator) {
+      creator = await userRepository
+        .createQueryBuilder('user')
+        .where('user.role >= :role', {role: UserRoles.Admin})
+        .orderBy('user.id', 'ASC')
+        .getOne();
+    }
+    if (!creator) {
+      throw new Error('Sharing creator user does not exist');
+    }
+    return creator;
+  }
+
   private static async removeExpiredLink(): Promise<DeleteResult> {
     const connection = await SQLConnection.getConnection();
     return await connection
@@ -65,6 +90,7 @@ export class SharingManager {
   async createSharing(sharing: UpdateSharingDTO): Promise<SharingEntity> {
     await SharingManager.removeExpiredLink();
     const connection = await SQLConnection.getConnection();
+    sharing.creator = await SharingManager.resolveCreator(sharing.creator);
     if (sharing.password) {
       sharing.password = PasswordHelper.cryptPassword(sharing.password);
     }
@@ -85,10 +111,15 @@ export class SharingManager {
   ): Promise<SharingEntity> {
     const connection = await SQLConnection.getConnection();
 
+    const creator = await SharingManager.resolveCreator(inSharing.creator);
     const sharing = await connection.getRepository(SharingEntity).findOneBy({
       id: inSharing.id,
-      creator: inSharing.creator.id as unknown,
+      creator: creator.id as unknown,
     });
+
+    if (!sharing) {
+      throw new Error('Sharing link not found for current user');
+    }
 
     if (
       sharing.timeStamp < Date.now() - Config.Sharing.updateTimeout &&
