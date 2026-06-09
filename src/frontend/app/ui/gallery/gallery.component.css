@@ -99,3 +99,18 @@ app-gallery-map {
   padding: 12px 0 18px;
   text-align: center;
 }
+
+.feed-debug-overlay {
+  position: fixed;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 2000;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.78);
+  color: #f6f6f6;
+  font: 12px/1.35 monospace;
+  pointer-events: none;
+  word-break: break-word;
+}

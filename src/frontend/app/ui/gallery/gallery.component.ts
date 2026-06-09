@@ -80,6 +80,7 @@ export class GalleryComponent implements OnInit, OnDestroy {
   public visibleDirectoryContent: GroupedDirectoryContent;
   public visibleMediaCount = 0;
   public totalMediaCount = 0;
+  public feedDebug = '';
   public isUploadOver = false;
   private $counter: Observable<number>;
   private readonly feedInitialMediaCount = 120;
@@ -288,6 +289,7 @@ export class GalleryComponent implements OnInit, OnDestroy {
       this.visibleMediaCount = Math.min(previousVisibleMediaCount, loadedMediaCount);
     }
     this.updateVisibleDirectoryContent();
+    this.updateFeedDebug('content feedChanged=' + feedChanged + ' prevLoaded=' + previousLoadedMediaCount + ' loaded=' + loadedMediaCount + ' prevVisible=' + previousVisibleMediaCount + ' visible=' + this.visibleMediaCount);
     this.scheduleLoadMoreIfNeeded();
   };
 
@@ -334,6 +336,7 @@ export class GalleryComponent implements OnInit, OnDestroy {
     }
     this.visibleMediaCount = nextLimit;
     this.updateVisibleDirectoryContent();
+    this.updateFeedDebug('extend visible=' + this.visibleMediaCount);
   }
 
   private getCurrentFeedKey(): string {
@@ -360,6 +363,31 @@ export class GalleryComponent implements OnInit, OnDestroy {
       mediaGroups: this.sliceMediaGroups(this.directoryContent.mediaGroups, this.visibleMediaCount),
     };
     this.isPhotoWithLocation = this.hasVisiblePhotoWithLocation(this.visibleDirectoryContent.mediaGroups);
+  }
+
+  private updateFeedDebug(reason: string): void {
+    const first = this.firstVisibleMediaName();
+    const last = this.lastVisibleMediaName();
+    const loaded = this.countMedia(this.directoryContent?.mediaGroups);
+    this.feedDebug = reason + ' | scroll=' + Math.round(PageHelper.ScrollY) + '/' + Math.round(PageHelper.MaxScrollY) +
+      ' | visible=' + this.visibleMediaCount + ' loaded=' + loaded + ' total=' + this.totalMediaCount +
+      ' | first=' + first + ' | last=' + last + ' | page=' + this.contentLoader.lastDirectoryPageDebug;
+  }
+
+  private firstVisibleMediaName(): string {
+    const groups = this.visibleDirectoryContent?.mediaGroups || [];
+    return groups[0]?.media?.[0]?.name || '-';
+  }
+
+  private lastVisibleMediaName(): string {
+    const groups = this.visibleDirectoryContent?.mediaGroups || [];
+    for (let i = groups.length - 1; i >= 0; i--) {
+      const media = groups[i].media;
+      if (media?.length) {
+        return media[media.length - 1].name;
+      }
+    }
+    return '-';
   }
 
   private sliceMediaGroups(mediaGroups: MediaGroup[], limit: number): MediaGroup[] {

@@ -25,6 +25,7 @@ export class ContentLoaderService implements OnDestroy {
   private pollingSub: Subscription;
   private readonly directoryInitialPageSize = 120;
   private readonly directoryPageSize = 240;
+  public lastDirectoryPageDebug = '';
   private loadingMoreDirectory = false;
   private directorySorting: SortingMethod = Config.Gallery.NavBar.SortingGrouping.defaultPhotoSortingMethod;
 
@@ -141,17 +142,21 @@ export class ContentLoaderService implements OnDestroy {
         return;
       }
 
-      const mediaKey = (media: MediaDTO): string =>
-        (media.directory?.path || '') + '/' + (media.directory?.name || '') + '/' + media.name;
-      const seen = new Set((latest.directory.media || []).map(mediaKey));
+      const directoryKey = (directory: { path?: string; name?: string }) => (directory?.path || '') + '/' + (directory?.name || '');
+      const latestDirectoryKey = directoryKey(latest.directory);
+      const nextDirectoryKey = directoryKey(nextContent.directory);
+      const mediaKey = (media: MediaDTO, fallbackDirectoryKey: string): string =>
+        ((media.directory ? directoryKey(media.directory) : fallbackDirectoryKey) + '/' + media.name);
+      const seen = new Set((latest.directory.media || []).map((media) => mediaKey(media, latestDirectoryKey)));
       const newMedia = nextContent.directory.media.filter((media) => {
-        const key = mediaKey(media);
+        const key = mediaKey(media, nextDirectoryKey);
         if (seen.has(key)) {
           return false;
         }
         seen.add(key);
         return true;
       });
+      this.lastDirectoryPageDebug = 'offset=' + offset + ' fetched=' + nextContent.directory.media.length + ' new=' + newMedia.length + ' loaded=' + (latest.directory.media || []).length;
       if (newMedia.length === 0) {
         const mediaPage = nextContent.directory.mediaPage || page;
         this.content.next({
@@ -167,6 +172,7 @@ export class ContentLoaderService implements OnDestroy {
         return;
       }
 
+      this.lastDirectoryPageDebug = 'offset=' + offset + ' fetched=' + nextContent.directory.media.length + ' new=' + newMedia.length + ' loaded=' + ((latest.directory.media || []).length + newMedia.length);
       const mergedDirectory = {
         ...latest.directory,
         media: (latest.directory.media || []).concat(newMedia),
