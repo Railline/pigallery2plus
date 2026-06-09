@@ -35,6 +35,7 @@
           <button
             *ngIf="!sharing"
             id="getShareButton" name="getShareButton"
+            type="button"
             (click)="share()"
             [disabled]="!shareForm.form.valid"
             class="btn btn-primary btn-block float-end"
@@ -42,6 +43,7 @@
           <button
             *ngIf="sharing"
             id="copyButton" name="copyButton"
+            type="button"
             ngxClipboard
             [cbContent]="url"
             (cbOnSuccess)="onCopy()"
@@ -145,6 +147,7 @@
         <td>{{share.expires | date}}</td>
         <td>
           <button (click)="deleteSharing(share)"
+                  type="button"
                   [disabled]="share.sharingKey == sharing?.sharingKey"
                   class="btn btn-danger float-end">
             <ng-icon name="ionTrashOutline" title="Delete" i18n-title></ng-icon>

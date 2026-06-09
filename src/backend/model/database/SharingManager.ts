@@ -47,7 +47,7 @@ export class SharingManager {
       .leftJoinAndSelect('share.creator', 'creator')
       .where('share.searchQuery = :query', {query: SearchQueryUtils.stringifyForComparison(query)});
     if (user) {
-      q.where('share.creator = :user', {user: user.id});
+      q.andWhere('share.creator = :user', {user: user.id});
     }
     return await q.getMany();
   }
@@ -72,9 +72,9 @@ export class SharingManager {
       SearchQueryUtils.validateSearchQuery(sharing.searchQuery);
       sharing.searchQuery = SearchQueryUtils.sortQuery(sharing.searchQuery);
     }
-    if(sharing.defaultSearchView){
+    if (sharing.defaultSearchView) {
       SearchQueryUtils.validateSearchQuery(sharing.defaultSearchView);
-      sharing.searchQuery = SearchQueryUtils.sortQuery(sharing.defaultSearchView);
+      sharing.defaultSearchView = SearchQueryUtils.sortQuery(sharing.defaultSearchView);
     }
     return connection.getRepository(SharingEntity).save(sharing);
   }
@@ -103,9 +103,9 @@ export class SharingManager {
     }
     // allow updating searchQuery and canonicalize it
     sharing.searchQuery = SearchQueryUtils.sortQuery(inSharing.searchQuery);
-    if(inSharing.defaultSearchView){
+    if (inSharing.defaultSearchView) {
       SearchQueryUtils.validateSearchQuery(inSharing.defaultSearchView);
-      sharing.searchQuery = SearchQueryUtils.sortQuery(inSharing.defaultSearchView);
+      sharing.defaultSearchView = SearchQueryUtils.sortQuery(inSharing.defaultSearchView);
     }
     if(inSharing.defaultDirectoryView){
       sharing.defaultDirectoryView = inSharing.defaultDirectoryView;

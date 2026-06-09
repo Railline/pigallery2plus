@@ -170,15 +170,24 @@ export class GalleryShareComponent implements OnInit, OnDestroy {
     }
     this.urlValid = false;
     this.url = $localize`loading..`;
-    this.sharing = await this.sharingService.updateSharingByQuery(
-        this.sharing.id,
-        this.currentQuery,
-        this.input.password,
-        this.calcValidity()
-    );
-    this.urlValid = true;
-    this.url = this.sharingService.getUrl(this.sharing);
-    await this.updateActiveSharesList();
+    try {
+      this.sharing = await this.sharingService.updateSharingByQuery(
+          this.sharing.id,
+          this.currentQuery,
+          this.input.password,
+          this.calcValidity()
+      );
+      this.urlValid = true;
+      this.url = this.sharingService.getUrl(this.sharing);
+      await this.updateActiveSharesList();
+    } catch (err) {
+      this.urlValid = false;
+      this.url = $localize`Could not update sharing link.`;
+      this.notification.error(
+          (err as any)?.message || err || $localize`Server error`,
+          $localize`Sharing error`
+      );
+    }
   }
 
   async get(): Promise<void> {
@@ -192,14 +201,24 @@ export class GalleryShareComponent implements OnInit, OnDestroy {
     }
     this.urlValid = false;
     this.url = $localize`loading..`;
-    this.sharing = await this.sharingService.createSharingByQuery(
-        this.currentQuery,
-        this.input.password,
-        this.calcValidity()
-    );
-    this.url = this.sharingService.getUrl(this.sharing);
-    this.urlValid = true;
-    await this.updateActiveSharesList();
+    try {
+      this.sharing = await this.sharingService.createSharingByQuery(
+          this.currentQuery,
+          this.input.password,
+          this.calcValidity()
+      );
+      this.url = this.sharingService.getUrl(this.sharing);
+      this.urlValid = true;
+      await this.updateActiveSharesList();
+    } catch (err) {
+      this.sharing = null;
+      this.urlValid = false;
+      this.url = $localize`Could not create sharing link.`;
+      this.notification.error(
+          (err as any)?.message || err || $localize`Server error`,
+          $localize`Sharing error`
+      );
+    }
   }
 
   async openModal(template: TemplateRef<unknown>): Promise<void> {
@@ -225,7 +244,7 @@ export class GalleryShareComponent implements OnInit, OnDestroy {
 
   async share() {
     await this.get();
-    if (this.clipboardService.isSupported) {
+    if (this.urlValid && this.clipboardService.isSupported) {
       this.clipboardService.copy(this.url);
       this.onCopy();
     }
