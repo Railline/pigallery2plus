@@ -1049,7 +1049,8 @@ export class SearchManager {
             qbr[whereFN](
               new Brackets((qb): void => {
                 const globPattern = convertGlobToLike((query as TextSearch).value);
-                const esc = ' ESCAPE \'\\\'';
+                const esc = '';
+
                 const op = (query as TextSearch).negate ? 'NOT LIKE' : 'LIKE';
 
                 textParam['CtextC' + queryId] = `%,${globPattern},%`;
