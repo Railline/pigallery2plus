@@ -43,6 +43,8 @@ export class RandomQueryBuilderGalleryComponent implements OnInit, OnDestroy {
   enabled = true;
   url = '';
   private currentDirectoryQuery: SearchQueryDTO = null;
+  private readonly randomShareKeys = new Map<string, string>();
+  private urlGenerationSeq = 0;
 
   contentSubscription: Subscription = null;
 
@@ -75,12 +77,49 @@ export class RandomQueryBuilderGalleryComponent implements OnInit, OnDestroy {
   }
 
   onQueryChange(): void {
-    let url = Config.Server.publicUrl + Config.Server.apiPath + '/gallery/random/' + this.HTMLSearchQuery;
-    const sharingKey = this.shareService.getSharingKey();
+    this.updateRandomUrl().catch(console.error);
+  }
+
+  private async updateRandomUrl(): Promise<void> {
+    const seq = ++this.urlGenerationSeq;
+    const query = this.getRandomSearchQuery();
+    const htmlSearchQuery = SearchQueryUtils.urlify(query);
+    let url = Config.Server.publicUrl + Config.Server.apiPath + '/gallery/random/' + encodeURIComponent(htmlSearchQuery);
+    const sharingKey = await this.getSharingKeyForRandomQuery(query, htmlSearchQuery);
+    if (seq !== this.urlGenerationSeq) {
+      return;
+    }
     if (sharingKey) {
       url += '?' + QueryParams.gallery.sharingKey_query + '=' + encodeURIComponent(sharingKey);
     }
     this.url = NetworkService.buildUrl(url);
+  }
+
+  private async getSharingKeyForRandomQuery(query: SearchQueryDTO, key: string): Promise<string> {
+    const currentSharingKey = this.shareService.getSharingKey();
+    if (currentSharingKey) {
+      return currentSharingKey;
+    }
+    if (!Config.Sharing.enabled || Config.Sharing.passwordRequired) {
+      return null;
+    }
+    if (this.randomShareKeys.has(key)) {
+      return this.randomShareKeys.get(key);
+    }
+
+    try {
+      this.url = $localize`loading..`;
+      const existingShares = await this.shareService.getSharingListForQuery(query);
+      const reusableShare = (existingShares || []).find((share) =>
+        !share.passwordProtected && (share.expires < 0 || share.expires > Date.now()));
+      const sharingKey = reusableShare?.sharingKey ||
+        (await this.shareService.createSharingByQuery(query, '', 30 * 24 * 60 * 60 * 1000)).sharingKey;
+      this.randomShareKeys.set(key, sharingKey);
+      return sharingKey;
+    } catch (e) {
+      console.error(e);
+      return null;
+    }
   }
 
   private getRandomSearchQuery(): SearchQueryDTO {

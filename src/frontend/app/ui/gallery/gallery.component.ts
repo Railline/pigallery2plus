@@ -34,6 +34,7 @@ import {SearchQueryUtils} from '../../../../common/SearchQueryUtils';
 import {UploaderService} from './uploader/uploader.service';
 import {GalleryService} from './gallery.service';
 import {UploaderComponent} from './uploader/uploader.gallery.component';
+import {NgIconComponent} from '@ng-icons/core';
 
 @Component({
   selector: 'app-gallery',
@@ -53,7 +54,8 @@ import {UploaderComponent} from './uploader/uploader.gallery.component';
     GPXFilesFilterPipe,
     PhotoFilterPipe,
     MediaButtonModalComponent,
-    UploaderComponent
+    UploaderComponent,
+    NgIconComponent
   ]
 })
 export class GalleryComponent implements OnInit, OnDestroy {
@@ -81,6 +83,7 @@ export class GalleryComponent implements OnInit, OnDestroy {
   public visibleMediaCount = 0;
   public totalMediaCount = 0;
   public feedDebug = '';
+  public feedDebugOverlayEnabled = false;
   public isUploadOver = false;
   private $counter: Observable<number>;
   private readonly feedInitialMediaCount = 120;
@@ -125,6 +128,19 @@ export class GalleryComponent implements OnInit, OnDestroy {
 
   get ShowMap(): boolean {
     return (this.isPhotoWithLocation || this.gpxFilesFilterPipe.transform(this.directoryContent?.metaFile)?.length > 0) && this.mapEnabled;
+  }
+
+  get CanShowFeedDebugTools(): boolean {
+    return this.authService.isAuthorized(UserRoles.Admin);
+  }
+
+  public toggleFeedDebugOverlay(): void {
+    this.feedDebugOverlayEnabled = !this.feedDebugOverlayEnabled;
+    if (!this.feedDebugOverlayEnabled) {
+      this.feedDebug = '';
+      return;
+    }
+    this.updateFeedDebug('debug enabled');
   }
 
   updateTimer(t: number): void {
@@ -366,6 +382,9 @@ export class GalleryComponent implements OnInit, OnDestroy {
   }
 
   private updateFeedDebug(reason: string): void {
+    if (!this.feedDebugOverlayEnabled) {
+      return;
+    }
     const first = this.firstVisibleMediaName();
     const last = this.lastVisibleMediaName();
     const loaded = this.countMedia(this.directoryContent?.mediaGroups);

@@ -38,13 +38,17 @@ export class GalleryMWs {
       try {
         query = JSON.parse(rawQueryParam);
       } catch (parseError) {
-        return next(
-          new ErrorDTO(
-            ErrorCodes.INPUT_ERROR,
-            'Invalid search query JSON: ' + parseError.message,
-            parseError
-          )
-        );
+        try {
+          query = JSON.parse(decodeURIComponent(rawQueryParam));
+        } catch (decodeParseError) {
+          return next(
+            new ErrorDTO(
+              ErrorCodes.INPUT_ERROR,
+              'Invalid search query JSON: ' + decodeParseError.message,
+              decodeParseError
+            )
+          );
+        }
       }
 
       // Store the parsed query for use by subsequent middlewares

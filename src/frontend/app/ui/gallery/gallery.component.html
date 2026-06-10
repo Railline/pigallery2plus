@@ -21,6 +21,13 @@
     <li role="menuitem" *ngIf="showRandomPhotoBuilder">
       <app-gallery-photo-frame-builder></app-gallery-photo-frame-builder>
     </li>
+    <li role="menuitem" *ngIf="CanShowFeedDebugTools">
+      <button class="dropdown-item" type="button" (click)="toggleFeedDebugOverlay()">
+        <ng-icon name="ionBugOutline"></ng-icon>
+        <ng-container *ngIf="!feedDebugOverlayEnabled" i18n>Show feed debug</ng-container>
+        <ng-container *ngIf="feedDebugOverlayEnabled" i18n>Hide feed debug</ng-container>
+      </button>
+    </li>
   </ng-container>
 
 
@@ -75,7 +82,7 @@
   </div>
 </app-frame>
 
-<div class="feed-debug-overlay" *ngIf="feedDebug">{{ feedDebug }}</div>
+<div class="feed-debug-overlay" *ngIf="feedDebugOverlayEnabled && feedDebug">{{ feedDebug }}</div>
 
 <!-- Media button modal (gallery-wide) -->
 <app-media-button-modal></app-media-button-modal>
