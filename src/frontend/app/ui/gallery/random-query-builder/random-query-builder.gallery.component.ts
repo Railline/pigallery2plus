@@ -6,7 +6,12 @@ import {BsModalService} from 'ngx-bootstrap/modal';
 import {BsModalRef} from 'ngx-bootstrap/modal/bs-modal-ref.service';
 import {NetworkService} from '../../../model/network/network.service';
 import {Subscription} from 'rxjs';
-import {SearchQueryDTO, SearchQueryTypes, TextSearch,} from '../../../../../common/entities/SearchQueryDTO';
+import {
+  SearchQueryDTO,
+  SearchQueryTypes,
+  TextSearch,
+  TextSearchQueryMatchTypes,
+} from '../../../../../common/entities/SearchQueryDTO';
 import {ActivatedRoute, Params} from '@angular/router';
 import {QueryParams} from '../../../../../common/QueryParams';
 import {SearchQueryParserService} from '../search/search-query-parser.service';
@@ -17,6 +22,7 @@ import { ClipboardModule } from 'ngx-clipboard';
 import { GallerySearchQueryBuilderComponent } from '../search/query-builder/query-bulder.gallery.component';
 import {SearchQueryUtils} from '../../../../../common/SearchQueryUtils';
 import {ShareService} from '../share.service';
+import {Utils} from '../../../../../common/Utils';
 
 @Component({
     selector: 'app-gallery-random-query-builder',
@@ -36,6 +42,7 @@ export class RandomQueryBuilderGalleryComponent implements OnInit, OnDestroy {
   } as TextSearch;
   enabled = true;
   url = '';
+  private currentDirectoryQuery: SearchQueryDTO = null;
 
   contentSubscription: Subscription = null;
 
@@ -64,7 +71,7 @@ export class RandomQueryBuilderGalleryComponent implements OnInit, OnDestroy {
   }
 
   get HTMLSearchQuery(): string {
-    return SearchQueryUtils.urlify(this.searchQueryDTO);
+    return SearchQueryUtils.urlify(this.getRandomSearchQuery());
   }
 
   onQueryChange(): void {
@@ -76,6 +83,17 @@ export class RandomQueryBuilderGalleryComponent implements OnInit, OnDestroy {
     this.url = NetworkService.buildUrl(url);
   }
 
+  private getRandomSearchQuery(): SearchQueryDTO {
+    const filterQuery = SearchQueryUtils.isQueryEmpty(this.searchQueryDTO) ? null : this.searchQueryDTO;
+    if (this.currentDirectoryQuery && filterQuery) {
+      return {
+        type: SearchQueryTypes.AND,
+        list: [this.currentDirectoryQuery, filterQuery],
+      } as SearchQueryDTO;
+    }
+    return this.currentDirectoryQuery || filterQuery || this.searchQueryDTO;
+  }
+
   ngOnInit(): void {
     this.contentSubscription = this.contentLoaderService.content.subscribe(
         (content: ContentWrapper) => {
@@ -83,7 +101,12 @@ export class RandomQueryBuilderGalleryComponent implements OnInit, OnDestroy {
           if (!this.enabled) {
             return;
           }
-          // this.data.directory = Utils.concatUrls((<DirectoryDTO>content.directory).path, (<DirectoryDTO>content.directory).name);
+          this.currentDirectoryQuery = {
+            type: SearchQueryTypes.directory,
+            value: Utils.concatUrls('./', content.directory.path, content.directory.name),
+            matchType: TextSearchQueryMatchTypes.exact_match,
+          } as TextSearch;
+          this.onQueryChange();
         }
     );
   }
