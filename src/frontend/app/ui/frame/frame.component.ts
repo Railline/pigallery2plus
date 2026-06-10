@@ -93,6 +93,10 @@ export class FrameComponent {
     this.user = this.authService.user;
   }
 
+  isLoggedIn(): boolean {
+    return this.user.value && this.user.value.role >= UserRoles.User;
+  }
+
   isAdmin(): boolean {
     return this.user.value && this.user.value.role >= UserRoles.Admin;
   }
@@ -139,8 +143,12 @@ export class FrameComponent {
     return false;
   }
 
+  login(): void {
+    this.router.navigate(['login']).catch(console.error);
+  }
+
   logout(): void {
-    this.authService.logout();
+    this.authService.logout().then(() => this.login()).catch(console.error);
   }
 
   isAlbumsAvailable(): boolean {

@@ -222,7 +222,13 @@
                       <ng-container i18n>Settings</ng-container>
                     </a>
                   </li>
-                  <li role="menuitem" *ngIf="authenticationRequired">
+                  <li role="menuitem" *ngIf="authenticationRequired && !isLoggedIn()">
+                    <button class="dropdown-item btn btn-link" (click)="login()">
+                      <ng-icon name="ionLogInOutline"></ng-icon>
+                      <ng-container i18n>Login</ng-container>
+                    </button>
+                  </li>
+                  <li role="menuitem" *ngIf="authenticationRequired && isLoggedIn()">
                     <button class="dropdown-item btn btn-link" (click)="logout()">
                       <ng-icon name="ionLogOutOutline"></ng-icon>
                       <ng-container i18n>Logout</ng-container>
