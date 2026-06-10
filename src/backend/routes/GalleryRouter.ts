@@ -10,6 +10,7 @@ import {SupportedFormats} from '../../common/SupportedFormats';
 import {ServerTimingMWs} from '../middlewares/ServerTimingMWs';
 import {MetaFileMWs} from '../middlewares/MetaFileMWs';
 import {Config} from '../../common/config/private/Config';
+import {SecurityMWs} from '../middlewares/SecurityMWs';
 
 export class GalleryRouter {
   public static route(app: Express): void {
@@ -160,9 +161,14 @@ export class GalleryRouter {
   }
 
   protected static addRandom(app: Express): void {
+    app.options(
+      [Config.Server.apiPath + '/gallery/random/:searchQueryDTO(*)'],
+      SecurityMWs.crossOriginRandomResource
+    );
     app.get(
       [Config.Server.apiPath + '/gallery/random/:searchQueryDTO(*)'],
       // common part
+      SecurityMWs.crossOriginRandomResource,
       AuthenticationMWs.authenticate,
       AuthenticationMWs.authorise(UserRoles.LimitedGuest),
       VersionMWs.injectGalleryVersion,

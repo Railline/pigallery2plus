@@ -518,7 +518,7 @@ export class SearchManager {
       case SearchQueryTypes.AND:
         return new Brackets((q): unknown => {
           (query as ANDSearchQuery).list.forEach((sq) => {
-              q.andWhere(this.buildWhereQuery(sq, directoryOnly));
+              q.andWhere(this.buildWhereQuery(sq, directoryOnly, aliases));
             }
           );
           return q;
@@ -526,7 +526,7 @@ export class SearchManager {
       case SearchQueryTypes.OR:
         return new Brackets((q): unknown => {
           (query as ANDSearchQuery).list.forEach((sq) => {
-              q.orWhere(this.buildWhereQuery(sq, directoryOnly));
+              q.orWhere(this.buildWhereQuery(sq, directoryOnly, aliases));
             }
           );
           return q;

@@ -26,6 +26,18 @@ export class SecurityMWs {
     return next();
   }
 
+  public static crossOriginRandomResource(req: Request, res: Response, next: NextFunction): void {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+    return next();
+  }
+
   public static csrfOriginCheck(req: Request, res: Response, next: NextFunction): void {
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
       return next();
