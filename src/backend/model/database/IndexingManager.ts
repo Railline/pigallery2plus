@@ -22,7 +22,7 @@ import {PersonEntry} from './enitites/person/PersonEntry';
 import {PersonJunctionTable} from './enitites/person/PersonJunctionTable';
 import {MDFileEntity} from './enitites/MDFileEntity';
 import {MDFileDTO} from '../../../common/entities/MDFileDTO';
-import {DiskManager} from '../fileaccess/DiskManager';
+import {DirectoryScanProgress, DiskManager} from '../fileaccess/DiskManager';
 import {ProjectedDirectoryCacheEntity} from './enitites/ProjectedDirectoryCacheEntity';
 
 const LOG_TAG = '[IndexingManager]';
@@ -74,7 +74,8 @@ export class IndexingManager {
    */
   public async indexDirectory(
     relativeDirectoryName: string,
-    waitForSave = false
+    waitForSave = false,
+    onProgress?: (progress: DirectoryScanProgress) => void
   ): Promise<ParentDirectoryDTO> {
     try {
       // Check if root is still a valid (non-empty) folder
@@ -86,7 +87,8 @@ export class IndexingManager {
       }
 
       const scannedDirectory = await DiskManager.scanDirectory(
-        relativeDirectoryName
+        relativeDirectoryName,
+        {onProgress}
       );
 
       const dirClone = Utils.clone(scannedDirectory);

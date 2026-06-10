@@ -44,6 +44,7 @@ export class IndexingJob<
       const connection = await SQLConnection.getConnection();
       const totalMedia = await connection.getRepository(MediaEntity).createQueryBuilder('media').getCount();
       this.Progress.setDetails('Images', totalMedia);
+      this.Progress.log('Known media in database before indexing: ' + totalMedia);
     } catch (e) {
       this.Progress.setDetails('Images', 0);
     }
@@ -52,6 +53,7 @@ export class IndexingJob<
   protected async step(): Promise<boolean> {
     if (this.directoriesToIndex.length === 0) {
       if (ObjectManagers.getInstance().IndexingManager.IsSavingInProgress) {
+        this.Progress.log('Waiting for pending database saves to finish.');
         await ObjectManagers.getInstance().IndexingManager.SavingReady;
       }
       this.Progress.Left = 0;
@@ -94,9 +96,23 @@ export class IndexingJob<
           this.Progress.Processed++;
           scanned =
             await ObjectManagers.getInstance().IndexingManager.indexDirectory(
-              directory
+              directory,
+              false,
+              (progress): void => {
+                this.Progress.setDetails(
+                  'Scanning ' + progress.directory,
+                  progress.total,
+                  progress.processed,
+                  0
+                );
+              }
             );
-          this.Progress.DetailProcessed = this.Progress.DetailProcessed + (scanned?.media?.length || 0);
+          this.Progress.setDetails(
+            'Media in last indexed folder',
+            scanned?.media?.length || 0,
+            scanned?.media?.length || 0,
+            0
+          );
         } else {
           this.Progress.log('Skipping. No change for: ' + directory);
           this.Progress.Skipped++;

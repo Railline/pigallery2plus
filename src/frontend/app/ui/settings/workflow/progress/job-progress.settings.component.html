@@ -55,8 +55,8 @@
         aria-valuemin="0"
         aria-valuemax="100"
         style="min-width: 2em;"
-        [style.width.%]="((progress.steps.processed+progress.steps.skipped)/progress.steps.all)*100">
-        {{progress.steps.processed + progress.steps.skipped}}/{{progress.steps.all}}
+        [style.width.%]="StepPercent">
+        {{StepDone}}/{{progress.steps.all}}
       </div>
       <div
         *ngIf="progress.steps.all === 0"
@@ -65,6 +65,15 @@
         aria-valuemin="0" aria-valuemax="100" style="width: 100%">
       </div>
     </div>
+  </div>
+  <div class="job-progress-summary mb-1">
+    <span i18n>Directories</span>:
+    <span class="fw-semibold">{{StepDone}}/{{progress.steps.all}}</span>
+    <span class="text-secondary">({{StepPercent | number:'1.0-1'}}%)</span>
+    <span class="ms-2" i18n>left</span>:
+    <span class="fw-semibold">{{progress.steps.all - progress.steps.skipped - progress.steps.processed}}</span>
+    <span class="ms-2" i18n>last update</span>:
+    <span class="fw-semibold">{{LastUpdateAge | duration:':'}}</span>
   </div>
 
   <div class="mb-1 row detail-progress-row" *ngIf="progress.details">
@@ -80,7 +89,7 @@
         aria-valuemax="100"
         style="min-width: 2em;"
         [style.width.%]="DetailPercent">
-        {{progress.details.processed + progress.details.skipped}}/{{progress.details.all}}
+        {{DetailDone}}/{{progress.details.all}}
       </div>
       <div
         *ngIf="progress.details.all === 0"
@@ -93,6 +102,11 @@
     <div class="col-12 col-md-2 col-lg-1 detail-count text-end text-md-left text-nowrap">
       {{DetailPercent | number:'1.0-1'}}%
     </div>
+  </div>
+  <div class="job-progress-summary mb-1" *ngIf="progress.details">
+    <span>{{progress.details.label}}</span>:
+    <span class="fw-semibold">{{DetailDone}}/{{progress.details.all}}</span>
+    <span class="text-secondary">({{DetailPercent | number:'1.0-1'}}%)</span>
   </div>
 </div>
 

@@ -198,6 +198,26 @@ export class DiskManager {
     }
     const list = await fsp.readdir(absoluteDirectoryName, {withFileTypes: true});
     let count = 0;
+    let completed = 0;
+    let lastProgressAt = 0;
+
+    const reportProgress = (force = false): void => {
+      if (!settings.onProgress || settings.coverOnly === true) {
+        return;
+      }
+      const now = Date.now();
+      if (!force && completed !== list.length && completed % 100 !== 0 && now - lastProgressAt < 1000) {
+        return;
+      }
+      lastProgressAt = now;
+      settings.onProgress({
+        directory: relativeDirectoryName,
+        processed: completed,
+        total: list.length,
+      });
+    };
+
+    reportProgress(true);
 
     const scanEntry = async (dirent: Dirent): Promise<{
       directory?: SubDirectoryDTO;
@@ -332,7 +352,19 @@ export class DiskManager {
 
     const scanResults = settings.coverOnly === true
       ? []
-      : await DiskManager.mapLimited(list, DiskManager.scanConcurrency, scanEntry);
+      : await DiskManager.mapLimited(list, DiskManager.scanConcurrency, async (dirent: Dirent): Promise<{
+        directory?: SubDirectoryDTO;
+        media?: PhotoDTO | VideoDTO;
+        metaFile?: FileDTO;
+        stopCoverScan?: boolean;
+      }> => {
+        try {
+          return await scanEntry(dirent);
+        } finally {
+          completed++;
+          reportProgress();
+        }
+      });
 
     if (settings.coverOnly === true) {
       for (const dirent of list) {
@@ -431,4 +463,11 @@ export interface DirectoryScanSettings {
   noDirectory?: boolean;
   noMetadata?: boolean; // skip parsing images for metadata like exif, iptc
   noChildDirPhotos?: boolean;
+  onProgress?: (progress: DirectoryScanProgress) => void;
+}
+
+export interface DirectoryScanProgress {
+  directory: string;
+  processed: number;
+  total: number;
 }

@@ -70,6 +70,28 @@ export class JobProgressComponent implements OnDestroy, OnChanges {
     return ((this.progress.details.processed + this.progress.details.skipped) / this.progress.details.all) * 100;
   }
 
+  get StepDone(): number {
+    return (this.progress?.steps?.processed || 0) + (this.progress?.steps?.skipped || 0);
+  }
+
+  get StepPercent(): number {
+    if (!this.progress?.steps?.all) {
+      return 0;
+    }
+    return (this.StepDone / this.progress.steps.all) * 100;
+  }
+
+  get DetailDone(): number {
+    return (this.progress?.details?.processed || 0) + (this.progress?.details?.skipped || 0);
+  }
+
+  get LastUpdateAge(): number {
+    if (!this.progress?.time?.end) {
+      return 0;
+    }
+    return Math.max(0, this.timeCurrentCopy - this.progress.time.end);
+  }
+
   get Name(): string {
     if (!this.progress) {
       return '';
@@ -167,6 +189,5 @@ export class JobProgressComponent implements OnDestroy, OnChanges {
     }
   }
 }
-
 
 

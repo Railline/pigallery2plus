@@ -163,7 +163,7 @@ export class ScheduledJobsService {
     if (this.timer != null || this.subscribers === 0) {
       return;
     }
-    let repeatTime = 5000;
+    let repeatTime = 1000;
     if (!this.isAnyJobRunning()) {
       repeatTime = 15000;
     }

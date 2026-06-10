@@ -24,3 +24,8 @@
 .detail-count {
   color: var(--bs-secondary-color);
 }
+
+.job-progress-summary {
+  font-size: .75rem;
+  color: var(--bs-body-color);
+}
