@@ -93,15 +93,18 @@ export class AuthenticationService {
   }
 
   public canSearch(): boolean {
-    return Config.Search.enabled && this.isAuthorized(UserRoles.Guest);
+    return Config.Search.enabled && this.isAuthorized(UserRoles.LimitedGuest);
   }
 
-  public async logout(): Promise<void> {
+  public async logout(restoreSharingSession = true): Promise<void> {
     await this.userService.logout();
     this.user.next(null);
-    // even on logout try to get sharing user if it's a sharing
+    if (!restoreSharingSession) {
+      return;
+    }
+    // Keep automatic share sessions on auth errors, but allow explicit logout to leave them.
     await this.shareService.wait();
-    if(this.shareService.isSharing()){
+    if (this.shareService.isSharing()) {
       await this.getSessionUser();
     }
   }

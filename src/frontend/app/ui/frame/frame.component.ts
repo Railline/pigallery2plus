@@ -141,8 +141,8 @@ export class FrameComponent {
   }
 
   logout(): void {
-    this.authService.logout().then(() => {
-      this.router.navigate(['login']).catch(console.error);
+    this.authService.logout(false).then(() => {
+      this.router.navigateByUrl('/login').catch(console.error);
     }).catch(console.error);
   }
 

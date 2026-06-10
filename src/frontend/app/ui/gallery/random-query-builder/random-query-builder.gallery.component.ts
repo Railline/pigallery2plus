@@ -16,6 +16,7 @@ import { FormsModule } from '@angular/forms';
 import { ClipboardModule } from 'ngx-clipboard';
 import { GallerySearchQueryBuilderComponent } from '../search/query-builder/query-bulder.gallery.component';
 import {SearchQueryUtils} from '../../../../../common/SearchQueryUtils';
+import {ShareService} from '../share.service';
 
 @Component({
     selector: 'app-gallery-random-query-builder',
@@ -47,7 +48,8 @@ export class RandomQueryBuilderGalleryComponent implements OnInit, OnDestroy {
       private notification: NotificationService,
       private searchQueryParserService: SearchQueryParserService,
       private route: ActivatedRoute,
-      private modalService: BsModalService
+      private modalService: BsModalService,
+      private shareService: ShareService
   ) {
     this.subscription = this.route.params.subscribe((params: Params) => {
       if (!params[QueryParams.gallery.search.query]) {
@@ -66,9 +68,12 @@ export class RandomQueryBuilderGalleryComponent implements OnInit, OnDestroy {
   }
 
   onQueryChange(): void {
-    this.url = NetworkService.buildUrl(
-        Config.Server.publicUrl + Config.Server.apiPath + '/gallery/random/' + this.HTMLSearchQuery
-    );
+    let url = Config.Server.publicUrl + Config.Server.apiPath + '/gallery/random/' + this.HTMLSearchQuery;
+    const sharingKey = this.shareService.getSharingKey();
+    if (sharingKey) {
+      url += '?' + QueryParams.gallery.sharingKey_query + '=' + encodeURIComponent(sharingKey);
+    }
+    this.url = NetworkService.buildUrl(url);
   }
 
   ngOnInit(): void {

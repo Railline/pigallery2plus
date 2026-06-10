@@ -181,7 +181,7 @@ export class GalleryComponent implements OnInit, OnDestroy {
       this.authService.isAuthorized(UserRoles.User);
     this.showRandomPhotoBuilder =
       Config.RandomPhoto.enabled &&
-      this.authService.isAuthorized(UserRoles.User);
+      this.authService.isAuthorized(UserRoles.LimitedGuest);
     this.subscription.content = this.contentService.sortedFilteredContent
       .subscribe((dc: GroupedDirectoryContent) => {
         this.onContentChange(dc);
