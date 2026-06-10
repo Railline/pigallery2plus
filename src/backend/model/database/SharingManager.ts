@@ -120,7 +120,9 @@ export class SharingManager {
     ) {
       throw new Error('Sharing is locked, can\'t update anymore');
     }
-    if (inSharing.password == null) {
+    if (typeof inSharing.password === 'undefined') {
+      // Keep the current password when metadata-only admin edits omit the password field.
+    } else if (inSharing.password == null) {
       sharing.password = null;
     } else {
       sharing.password = PasswordHelper.cryptPassword(inSharing.password);

@@ -181,10 +181,6 @@ export class SharingMWs {
         id: updateSharing.id,
         searchQuery,
         sharingKey: '',
-        password:
-          updateSharing.password && updateSharing.password !== ''
-            ? updateSharing.password
-            : null,
         creator: req.session.context?.user,
         expires:
           updateSharing.valid >= 0 // if === -1 its forever
@@ -193,6 +189,12 @@ export class SharingMWs {
         timeStamp: Date.now(),
       };
 
+      if (Object.prototype.hasOwnProperty.call(updateSharing, 'password')) {
+        sharing.password =
+          updateSharing.password && updateSharing.password !== ''
+            ? updateSharing.password
+            : null;
+      }
 
       if (updateSharing.defaultDirectoryView) {
         sharing.defaultDirectoryView = updateSharing.defaultDirectoryView;

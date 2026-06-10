@@ -149,14 +149,14 @@ export class ShareService {
   public updateSharingByQuery(
     sharingId: number,
     searchQuery: SearchQueryDTO,
-    password: string,
+    password: string | undefined,
     valid: number
   ): Promise<ResponseSharingDTO> {
     return this.networkService.putJson('/share/', {
       updateSharing: {
         id: sharingId,
         valid,
-        password,
+        ...(password !== undefined && {password}),
         searchQuery
       } as CreateSharingDTO,
     });

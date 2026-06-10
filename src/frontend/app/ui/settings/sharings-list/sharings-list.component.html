@@ -19,17 +19,79 @@
       </tr>
       </thead>
       <tbody>
-      <tr *ngFor="let share of shares">
-        <td class="ellipsisContainer"><a [href]="sharingService.getUrl(share)" class="ellipsisText">{{share.sharingKey}}</a></td>
-        <td>{{share.searchQuery | searchQuery}}</td>
-        <td>{{share.creator.name}}</td>
-        <td>{{share.expires | date}}</td>
-        <td>
-          <button (click)="deleteSharing(share)" class="btn btn-danger float-end">
-            <ng-icon name="ionTrashOutline" title="Delete" i18n-title></ng-icon>
-          </button>
-        </td>
-      </tr>
+      <ng-container *ngFor="let share of shares">
+        <tr>
+          <td class="ellipsisContainer"><a [href]="sharingService.getUrl(share)" class="ellipsisText">{{share.sharingKey}}</a></td>
+          <td>{{share.searchQuery | searchQuery}}</td>
+          <td>{{share.creator.name}}</td>
+          <td>{{share.expires | date}}</td>
+          <td class="share-actions">
+            <button (click)="startEdit(share)" class="btn btn-secondary me-2" type="button">
+              <ng-icon name="ionPencil" title="Edit" i18n-title></ng-icon>
+            </button>
+            <button (click)="deleteSharing(share)" class="btn btn-danger" type="button">
+              <ng-icon name="ionTrashOutline" title="Delete" i18n-title></ng-icon>
+            </button>
+          </td>
+        </tr>
+        <tr *ngIf="editingShare?.id === share.id">
+          <td colspan="5" class="share-editor">
+            <div class="row g-2">
+              <div class="col-12">
+                <label class="form-label" for="share-query-edit" i18n>Search query</label>
+                <textarea id="share-query-edit"
+                          name="share-query-edit"
+                          class="form-control query-editor"
+                          [(ngModel)]="editQueryText"
+                          (ngModelChange)="updateRandomUrlPreview()"></textarea>
+              </div>
+              <div class="col-12 col-md-5">
+                <label class="form-label" for="share-expire-edit" i18n>Expires</label>
+                <input id="share-expire-edit"
+                       name="share-expire-edit"
+                       class="form-control"
+                       type="datetime-local"
+                       [(ngModel)]="editExpiresAt"
+                       (ngModelChange)="updateRandomUrlPreview()"
+                       [disabled]="editForever">
+              </div>
+              <div class="col-12 col-md-2 d-flex align-items-end">
+                <label class="form-check mb-2">
+                  <input class="form-check-input"
+                         type="checkbox"
+                         name="share-forever-edit"
+                         [(ngModel)]="editForever"
+                         (ngModelChange)="updateRandomUrlPreview()">
+                  <span class="form-check-label" i18n>Forever</span>
+                </label>
+              </div>
+              <div class="col-12 col-md-5">
+                <label class="form-label" for="share-random-url" i18n>Random image URL</label>
+                <input id="share-random-url"
+                       name="share-random-url"
+                       class="form-control"
+                       type="text"
+                       readonly
+                       [ngModel]="editRandomUrl">
+              </div>
+              <div class="col-12 text-danger" *ngIf="editError">{{editError}}</div>
+              <div class="col-12">
+                <button (click)="saveEdit()"
+                        [disabled]="saving || !!editError"
+                        type="button"
+                        class="btn btn-primary me-2">
+                  <ng-icon name="ionSaveOutline" title="Save" i18n-title></ng-icon>
+                  <span i18n>Save</span>
+                </button>
+                <button (click)="cancelEdit()" type="button" class="btn btn-secondary">
+                  <ng-icon name="ionCloseOutline" title="Cancel" i18n-title></ng-icon>
+                  <span i18n>Cancel</span>
+                </button>
+              </div>
+            </div>
+          </td>
+        </tr>
+      </ng-container>
       </tbody>
     </table>
   </ng-container>
