@@ -19,6 +19,42 @@ export class ActivityAuditMWs {
   private static logPath: string = null;
   private static rotating = false;
 
+  public static async readRecent(limit: number): Promise<Record<string, unknown>[]> {
+    const logPath = ActivityAuditMWs.getLogPath();
+    return new Promise((resolve, reject) => {
+      fs.readFile(logPath, 'utf8', (err, content) => {
+        if (err) {
+          if (err.code === 'ENOENT') {
+            return resolve([]);
+          }
+          return reject(err);
+        }
+
+        const lines = content
+          .trim()
+          .split('\n')
+          .filter(Boolean)
+          .slice(-limit);
+        const entries = lines.map((line) => {
+          try {
+            return JSON.parse(line);
+          } catch {
+            return {
+              time: null,
+              action: 'parse-error',
+              method: '',
+              url: line.slice(0, 4096),
+              status: 0,
+              durationMs: 0,
+              user: {name: 'unknown', role: 'unknown'},
+            };
+          }
+        });
+        resolve(entries.reverse());
+      });
+    });
+  }
+
   public static audit(req: Request, res: Response, next: NextFunction): void {
     const start = Date.now();
     const shouldAudit = ActivityAuditMWs.shouldAudit(req);

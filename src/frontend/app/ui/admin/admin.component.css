@@ -22,3 +22,36 @@ nav.sticky-top {
 .btn-settings-nav{
   line-height: initial;
 }
+
+.activity-limit {
+  width: 6rem;
+}
+
+.activity-log-table {
+  table-layout: fixed;
+}
+
+.activity-log-table th:nth-child(1) {
+  width: 12rem;
+}
+
+.activity-log-table th:nth-child(2) {
+  width: 10rem;
+}
+
+.activity-log-table th:nth-child(3),
+.activity-log-table th:nth-child(4),
+.activity-log-table th:nth-child(5) {
+  width: 7rem;
+}
+
+.activity-log-table th:nth-child(6) {
+  width: 9rem;
+}
+
+.activity-url {
+  max-width: 22rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

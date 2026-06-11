@@ -84,6 +84,10 @@
             <div class="card-body text-md-start text-center align-content-md-start align-content-center">
               <h5 i18n="title of left card in settings page that contains settings contents" class="card-title">
                 Menu</h5>
+              <button class="btn btn-link btn-settings-nav nav-link text-start p-0 text-nowrap"
+                      (click)="viewportScroller.scrollToAnchor('ActivityAudit')">
+                <ng-icon name="ionDocumentTextOutline"></ng-icon> Activity logs
+              </button>
               <div class="py-md-1 px-md-0"
                    *ngFor="let s of contents;"
                    [hidden]="!s.HasAvailableSettings">
@@ -121,6 +125,81 @@
           <app-settigns-sharings-list *ngIf="cp=='Sharing'"></app-settigns-sharings-list>
           <app-extension-installer *ngIf="cp=='Extensions'"></app-extension-installer>
         </app-settings-template>
+
+        <div class="card mt-4" id="ActivityAudit">
+          <div class="card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
+            <h5 class="m-0">Activity logs</h5>
+            <div class="d-flex align-items-center gap-2">
+              <select class="form-select form-select-sm activity-limit"
+                      [value]="activityAuditLimit"
+                      (change)="setActivityAuditLimit(+$any($event.target).value)">
+                <option [value]="100">100</option>
+                <option [value]="200">200</option>
+                <option [value]="500">500</option>
+                <option [value]="1000">1000</option>
+              </select>
+              <button type="button"
+                      class="btn btn-sm btn-primary"
+                      [disabled]="activityAuditLoading"
+                      (click)="loadActivityAudit()">
+                <ng-icon name="ionRefresh" class="me-1"></ng-icon>
+                Refresh
+              </button>
+            </div>
+          </div>
+          <div class="card-body p-0">
+            <div *ngIf="activityAuditError" class="alert alert-danger m-3">
+              {{activityAuditError}}
+            </div>
+            <div *ngIf="activityAuditLoading" class="p-3 text-secondary">
+              Loading activity logs...
+            </div>
+            <div *ngIf="!activityAuditLoading && activityAuditEntries.length === 0" class="p-3 text-secondary">
+              No activity log entry yet.
+            </div>
+            <div class="table-responsive" *ngIf="activityAuditEntries.length > 0">
+              <table class="table table-sm table-hover align-middle activity-log-table mb-0">
+                <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>User</th>
+                  <th>Action</th>
+                  <th>Status</th>
+                  <th>Duration</th>
+                  <th>IP</th>
+                  <th>URL</th>
+                  <th>Referer</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr *ngFor="let entry of activityAuditEntries">
+                  <td class="text-nowrap">{{entry.time | date:'medium'}}</td>
+                  <td>
+                    <div>{{entry.user?.name || 'guest'}}</div>
+                    <small class="text-secondary">{{entry.loginUser ? 'login: ' + entry.loginUser : entry.user?.role}}</small>
+                  </td>
+                  <td>
+                    <span class="badge text-bg-secondary">{{entry.action}}</span>
+                    <div class="small text-secondary">{{entry.method}}</div>
+                  </td>
+                  <td>
+                    <span class="badge"
+                          [class.text-bg-success]="entry.status >= 200 && entry.status < 400"
+                          [class.text-bg-warning]="entry.status >= 400 && entry.status < 500"
+                          [class.text-bg-danger]="entry.status >= 500">
+                      {{entry.status}}
+                    </span>
+                  </td>
+                  <td class="text-nowrap">{{entry.durationMs}} ms</td>
+                  <td class="text-nowrap">{{entry.ip}}</td>
+                  <td class="activity-url" [title]="entry.url">{{entry.url}}</td>
+                  <td class="activity-url text-secondary" [title]="entry.referer">{{entry.referer}}</td>
+                </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 

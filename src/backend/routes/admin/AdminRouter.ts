@@ -9,6 +9,7 @@ export class AdminRouter {
   public static route(app: Express): void {
     this.addGetStatistic(app);
     this.addGetDuplicates(app);
+    this.addActivityAudit(app);
     this.addJobs(app);
     this.addMessengers(app);
   }
@@ -30,6 +31,16 @@ export class AdminRouter {
         AuthenticationMWs.authorise(UserRoles.Admin),
         AdminMWs.getDuplicates,
         RenderingMWs.renderResult
+    );
+  }
+
+  private static addActivityAudit(app: Express): void {
+    app.get(
+      Config.Server.apiPath + '/admin/activity-audit',
+      AuthenticationMWs.authenticate,
+      AuthenticationMWs.authorise(UserRoles.Admin),
+      AdminMWs.getActivityAuditLog,
+      RenderingMWs.renderResult
     );
   }
 

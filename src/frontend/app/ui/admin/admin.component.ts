@@ -22,6 +22,24 @@ import { UsersComponent } from '../settings/users/users.component';
 import { SharingsListComponent } from '../settings/sharings-list/sharings-list.component';
 import { ExtensionInstallerComponent } from '../settings/extension-installer/extension-installer.component';
 import { StringifyEnum } from '../../pipes/StringifyEnum';
+import {NetworkService} from '../../model/network/network.service';
+
+interface ActivityAuditEntry {
+  time?: string;
+  action?: string;
+  method?: string;
+  url?: string;
+  status?: number;
+  durationMs?: number;
+  ip?: string;
+  userAgent?: string;
+  referer?: string;
+  loginUser?: string;
+  user?: {
+    name?: string;
+    role?: unknown;
+  };
+}
 
 @Component({
     selector: 'app-admin',
@@ -57,10 +75,15 @@ export class AdminComponent implements OnInit, AfterViewInit {
   public readonly ConfigPriority = ConfigPriority;
   public readonly ConfigStyle = ConfigStyle;
   public readonly configPaths: string[] = [];
+  public activityAuditEntries: ActivityAuditEntry[] = [];
+  public activityAuditLimit = 200;
+  public activityAuditLoading = false;
+  public activityAuditError = '';
 
   constructor(
     private authService: AuthenticationService,
     private navigation: NavigationService,
+    private networkService: NetworkService,
     public viewportScroller: ViewportScroller,
     public notificationService: NotificationService,
     public settingsService: SettingsService,
@@ -86,6 +109,27 @@ export class AdminComponent implements OnInit, AfterViewInit {
       return;
     }
     this.piTitleService.setTitle($localize`Admin`);
+    this.loadActivityAudit().catch(console.error);
+  }
+
+  public async loadActivityAudit(): Promise<void> {
+    this.activityAuditLoading = true;
+    this.activityAuditError = '';
+    try {
+      this.activityAuditEntries = await this.networkService.getJson<ActivityAuditEntry[]>(
+        '/admin/activity-audit',
+        {limit: this.activityAuditLimit}
+      );
+    } catch (err) {
+      this.activityAuditError = String(err);
+    } finally {
+      this.activityAuditLoading = false;
+    }
+  }
+
+  public setActivityAuditLimit(limit: number): void {
+    this.activityAuditLimit = limit;
+    this.loadActivityAudit().catch(console.error);
   }
 
   public getCss(type: NotificationType): string {
@@ -100,6 +144,5 @@ export class AdminComponent implements OnInit, AfterViewInit {
     return 'info';
   }
 }
-
 
 

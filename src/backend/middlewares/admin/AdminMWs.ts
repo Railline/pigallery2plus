@@ -4,8 +4,38 @@ import {ObjectManagers} from '../../model/ObjectManagers';
 import {StatisticDTO} from '../../../common/entities/settings/StatisticDTO';
 import {MessengerRepository} from '../../model/messenger/MessengerRepository';
 import {JobStartDTO} from '../../../common/entities/job/JobDTO';
+import {ActivityAuditMWs} from '../ActivityAuditMWs';
 
 export class AdminMWs {
+  public static async getActivityAuditLog(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    try {
+      const limit = Math.min(Math.max(parseInt(req.query.limit as string, 10) || 200, 1), 1000);
+      req.resultPipe = await ActivityAuditMWs.readRecent(limit);
+      return next();
+    } catch (err) {
+      if (err instanceof Error) {
+        return next(
+          new ErrorDTO(
+            ErrorCodes.GENERAL_ERROR,
+            'Error while getting activity audit log: ' + err.toString(),
+            err
+          )
+        );
+      }
+      return next(
+        new ErrorDTO(
+          ErrorCodes.GENERAL_ERROR,
+          'Error while getting activity audit log',
+          err
+        )
+      );
+    }
+  }
+
   public static async loadStatistic(
     req: Request,
     res: Response,
