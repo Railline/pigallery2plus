@@ -77,20 +77,24 @@ export class RandomQueryBuilderGalleryComponent implements OnInit, OnDestroy {
   }
 
   onQueryChange(): void {
-    this.updateRandomUrl().catch(console.error);
+    if (this.modalRef) {
+      this.updateRandomUrl(true).catch(console.error);
+    }
   }
 
-  private async updateRandomUrl(): Promise<void> {
+  private async updateRandomUrl(includeSharingKey = false): Promise<void> {
     const seq = ++this.urlGenerationSeq;
     const query = this.getRandomSearchQuery();
     const htmlSearchQuery = SearchQueryUtils.urlify(query);
     let url = Config.Server.publicUrl + Config.Server.apiPath + '/gallery/random/' + encodeURIComponent(htmlSearchQuery);
-    const sharingKey = await this.getSharingKeyForRandomQuery(query, htmlSearchQuery);
-    if (seq !== this.urlGenerationSeq) {
-      return;
-    }
-    if (sharingKey) {
-      url += '?' + QueryParams.gallery.sharingKey_query + '=' + encodeURIComponent(sharingKey);
+    if (includeSharingKey) {
+      const sharingKey = await this.getSharingKeyForRandomQuery(query, htmlSearchQuery);
+      if (seq !== this.urlGenerationSeq) {
+        return;
+      }
+      if (sharingKey) {
+        url += '?' + QueryParams.gallery.sharingKey_query + '=' + encodeURIComponent(sharingKey);
+      }
     }
     this.url = NetworkService.buildUrl(url);
   }
@@ -145,7 +149,6 @@ export class RandomQueryBuilderGalleryComponent implements OnInit, OnDestroy {
             value: Utils.concatUrls('./', content.directory.path, content.directory.name),
             matchType: TextSearchQueryMatchTypes.exact_match,
           } as TextSearch;
-          this.onQueryChange();
         }
     );
   }
@@ -170,7 +173,7 @@ export class RandomQueryBuilderGalleryComponent implements OnInit, OnDestroy {
 
     this.modalRef = this.modalService.show(template, {class: 'modal-lg'});
     document.body.style.paddingRight = '0px';
-    this.onQueryChange();
+    this.updateRandomUrl(true).catch(console.error);
     return false;
   }
 
