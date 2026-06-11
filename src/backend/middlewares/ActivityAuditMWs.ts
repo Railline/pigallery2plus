@@ -153,7 +153,7 @@ export class ActivityAuditMWs {
     if (url.includes('/user/logout')) {
       return 'logout';
     }
-    if (url.includes('/gallery/random/')) {
+    if (url.includes('/gallery/random/') || url.includes('/gallery/random-link/')) {
       return 'random-image';
     }
     if (url.includes('/share') || url.includes('/sharing')) {

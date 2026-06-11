@@ -93,7 +93,7 @@ export class RandomQueryBuilderGalleryComponent implements OnInit, OnDestroy {
         return;
       }
       if (sharingKey) {
-        url += '?' + QueryParams.gallery.sharingKey_query + '=' + encodeURIComponent(sharingKey);
+        url = Config.Server.publicUrl + Config.Server.apiPath + '/gallery/random-link/' + encodeURIComponent(sharingKey);
       }
     }
     this.url = NetworkService.buildUrl(url);

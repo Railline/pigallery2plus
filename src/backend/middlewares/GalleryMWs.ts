@@ -16,9 +16,18 @@ import {SearchQueryDTO, SearchQueryTypes,} from '../../common/entities/SearchQue
 import {SearchQueryUtils} from '../../common/SearchQueryUtils';
 import {LocationLookupException} from '../exceptions/LocationLookupException';
 import {ServerTime} from './ServerTimingMWs';
-import {SortByTypes} from '../../common/entities/SortingMethods';
+import {Logger} from '../Logger';
 
 export class GalleryMWs {
+  private static readonly RANDOM_CACHE_TTL = 15 * 60 * 1000;
+  private static readonly RANDOM_CACHE_MAX = 64;
+  private static readonly randomMediaPathCache = new Map<string, {
+    paths: string[],
+    expires: number,
+    created: number,
+    hits: number,
+  }>();
+
   /**
    * Middleware to safely parse searchQueryDTO from URL parameters
    * Handles URL decoding and JSON parsing with proper error handling
@@ -461,19 +470,54 @@ export class GalleryMWs {
       }
 
       const query: SearchQueryDTO = req.resultPipe as any;
+      const started = Date.now();
+      const cacheKey = GalleryMWs.getRandomCacheKey(req, query);
+      let cache = GalleryMWs.randomMediaPathCache.get(cacheKey);
 
-      const photos =
-        await ObjectManagers.getInstance().SearchManager.getNMedia(
+      if (!cache || cache.expires <= Date.now()) {
+        const sqlStarted = Date.now();
+        const paths = await ObjectManagers.getInstance().SearchManager.getMediaPaths(
           req.session.context,
-          query, [{method: SortByTypes.Random, ascending: null}], 1, true);
-      if (!photos || photos.length !== 1) {
+          query,
+          true
+        );
+        cache = {
+          paths,
+          expires: Date.now() + GalleryMWs.RANDOM_CACHE_TTL,
+          created: Date.now(),
+          hits: 0,
+        };
+        GalleryMWs.randomMediaPathCache.set(cacheKey, cache);
+        GalleryMWs.trimRandomCache();
+        Logger.info(
+          '[RandomPhoto]',
+          'cache miss',
+          'items=' + paths.length,
+          'sqlMs=' + (Date.now() - sqlStarted),
+          'key=' + cacheKey.slice(0, 16)
+        );
+      } else {
+        cache.hits++;
+        Logger.info(
+          '[RandomPhoto]',
+          'cache hit',
+          'items=' + cache.paths.length,
+          'hits=' + cache.hits,
+          'key=' + cacheKey.slice(0, 16)
+        );
+      }
+
+      if (!cache.paths || cache.paths.length < 1) {
         return next(new ErrorDTO(ErrorCodes.INPUT_ERROR, 'No photo found'));
       }
 
-      req.params['mediaPath'] = path.join(
-        photos[0].directory.path,
-        photos[0].directory.name,
-        photos[0].name
+      const selected = cache.paths[Math.floor(Math.random() * cache.paths.length)];
+      req.params['mediaPath'] = selected;
+      Logger.info(
+        '[RandomPhoto]',
+        'selected',
+        'totalMs=' + (Date.now() - started),
+        'path=' + selected
       );
       return next();
     } catch (e) {
@@ -507,6 +551,66 @@ export class GalleryMWs {
           'Can\'t get random photo: ' + e.toString()
         )
       );
+    }
+  }
+
+  public static setRandomSharingKeyParam(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): void {
+    if (req.params[QueryParams.gallery.sharingKey_params]) {
+      req.query[QueryParams.gallery.sharingKey_query] = req.params[QueryParams.gallery.sharingKey_params];
+    }
+    return next();
+  }
+
+  public static async loadRandomLinkQuery(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    try {
+      const sharingKey = req.params[QueryParams.gallery.sharingKey_params] ||
+        req.query[QueryParams.gallery.sharingKey_query];
+      if (!sharingKey || typeof sharingKey !== 'string') {
+        return next(new ErrorDTO(ErrorCodes.INPUT_ERROR, 'No sharing key provided'));
+      }
+      const sharing = await ObjectManagers.getInstance().SharingManager.findOne(sharingKey);
+      if (!sharing || !sharing.searchQuery) {
+        return next(new ErrorDTO(ErrorCodes.INPUT_ERROR, 'Sharing link not found'));
+      }
+      req.resultPipe = sharing.searchQuery;
+      return next();
+    } catch (e) {
+      return next(
+        new ErrorDTO(
+          ErrorCodes.GENERAL_ERROR,
+          'Can\'t load random sharing query: ' + e.toString()
+        )
+      );
+    }
+  }
+
+  private static getRandomCacheKey(req: Request, query: SearchQueryDTO): string {
+    const user = req.session.context?.user;
+    const projection = user?.projectionKey || '';
+    const sharingKey = user?.usedSharingKey || req.query[QueryParams.gallery.sharingKey_query] || '';
+    return [
+      projection,
+      sharingKey,
+      SearchQueryUtils.stringifyForComparison(query),
+    ].join('|');
+  }
+
+  private static trimRandomCache(): void {
+    if (GalleryMWs.randomMediaPathCache.size <= GalleryMWs.RANDOM_CACHE_MAX) {
+      return;
+    }
+    const entries = Array.from(GalleryMWs.randomMediaPathCache.entries())
+      .sort((a, b) => a[1].created - b[1].created);
+    for (const [key] of entries.slice(0, GalleryMWs.randomMediaPathCache.size - GalleryMWs.RANDOM_CACHE_MAX)) {
+      GalleryMWs.randomMediaPathCache.delete(key);
     }
   }
 }

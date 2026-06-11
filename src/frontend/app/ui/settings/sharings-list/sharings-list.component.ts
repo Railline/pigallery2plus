@@ -114,9 +114,9 @@ export class SharingsListComponent implements OnInit {
   getRandomUrl(share: ResponseSharingDTO, query: SearchQueryDTO = share.searchQuery): string {
     return Utils.concatUrls(
       Config.Server.publicUrl,
-      '/pgapi/gallery/random/',
-      encodeURIComponent(SearchQueryUtils.urlify(query))
-    ) + '?sk=' + encodeURIComponent(share.sharingKey);
+      '/pgapi/gallery/random-link/',
+      encodeURIComponent(share.sharingKey)
+    );
   }
 
   private parseEditQuery(): SearchQueryDTO {

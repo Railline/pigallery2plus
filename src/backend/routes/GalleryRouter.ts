@@ -11,6 +11,7 @@ import {ServerTimingMWs} from '../middlewares/ServerTimingMWs';
 import {MetaFileMWs} from '../middlewares/MetaFileMWs';
 import {Config} from '../../common/config/private/Config';
 import {SecurityMWs} from '../middlewares/SecurityMWs';
+import {QueryParams} from '../../common/QueryParams';
 
 export class GalleryRouter {
   public static route(app: Express): void {
@@ -162,7 +163,10 @@ export class GalleryRouter {
 
   protected static addRandom(app: Express): void {
     app.options(
-      [Config.Server.apiPath + '/gallery/random/:searchQueryDTO(*)'],
+      [
+        Config.Server.apiPath + '/gallery/random/:searchQueryDTO(*)',
+        Config.Server.apiPath + '/gallery/random-link/:' + QueryParams.gallery.sharingKey_params,
+      ],
       SecurityMWs.crossOriginRandomResource
     );
     app.get(
@@ -175,6 +179,22 @@ export class GalleryRouter {
 
       // specific part
       GalleryMWs.parseSearchQuery,
+      GalleryMWs.getRandomImage,
+      GalleryMWs.loadFile,
+      ServerTimingMWs.addServerTiming,
+      RenderingMWs.renderFile
+    );
+    app.get(
+      [Config.Server.apiPath + '/gallery/random-link/:' + QueryParams.gallery.sharingKey_params],
+      // common part
+      SecurityMWs.crossOriginRandomResource,
+      GalleryMWs.setRandomSharingKeyParam,
+      AuthenticationMWs.authenticate,
+      AuthenticationMWs.authorise(UserRoles.LimitedGuest),
+      VersionMWs.injectGalleryVersion,
+
+      // specific part
+      GalleryMWs.loadRandomLinkQuery,
       GalleryMWs.getRandomImage,
       GalleryMWs.loadFile,
       ServerTimingMWs.addServerTiming,
