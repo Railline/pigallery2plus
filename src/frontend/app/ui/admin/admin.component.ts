@@ -23,6 +23,7 @@ import { SharingsListComponent } from '../settings/sharings-list/sharings-list.c
 import { ExtensionInstallerComponent } from '../settings/extension-installer/extension-installer.component';
 import { StringifyEnum } from '../../pipes/StringifyEnum';
 import {NetworkService} from '../../model/network/network.service';
+import {FormsModule} from '@angular/forms';
 
 interface ActivityAuditEntry {
   time?: string;
@@ -63,6 +64,7 @@ interface ActivityAuditEntry {
         JsonPipe,
         DatePipe,
         StringifyEnum,
+        FormsModule,
     ]
 })
 export class AdminComponent implements OnInit, AfterViewInit {
@@ -76,9 +78,29 @@ export class AdminComponent implements OnInit, AfterViewInit {
   public readonly ConfigStyle = ConfigStyle;
   public readonly configPaths: string[] = [];
   public activityAuditEntries: ActivityAuditEntry[] = [];
-  public activityAuditLimit = 200;
+  public activityAuditLimit = 100;
   public activityAuditLoading = false;
   public activityAuditError = '';
+  public activityAuditFilters = {
+    user: '',
+    action: '',
+    ip: '',
+    status: '',
+    text: '',
+    from: '',
+    to: '',
+  };
+  public readonly activityAuditActions = [
+    '',
+    'gallery',
+    'gallery-list',
+    'login',
+    'logout',
+    'random-image',
+    'search',
+    'share',
+    'request',
+  ];
 
   constructor(
     private authService: AuthenticationService,
@@ -118,7 +140,7 @@ export class AdminComponent implements OnInit, AfterViewInit {
     try {
       this.activityAuditEntries = await this.networkService.getJson<ActivityAuditEntry[]>(
         '/admin/activity-audit',
-        {limit: this.activityAuditLimit}
+        this.buildActivityAuditQuery()
       );
     } catch (err) {
       this.activityAuditError = String(err);
@@ -130,6 +152,40 @@ export class AdminComponent implements OnInit, AfterViewInit {
   public setActivityAuditLimit(limit: number): void {
     this.activityAuditLimit = limit;
     this.loadActivityAudit().catch(console.error);
+  }
+
+  public resetActivityAuditFilters(): void {
+    this.activityAuditFilters = {
+      user: '',
+      action: '',
+      ip: '',
+      status: '',
+      text: '',
+      from: '',
+      to: '',
+    };
+    this.loadActivityAudit().catch(console.error);
+  }
+
+  public filterActivityAuditBy(field: 'user' | 'ip' | 'action', value?: string): void {
+    if (!value) {
+      return;
+    }
+    this.activityAuditFilters[field] = value;
+    this.loadActivityAudit().catch(console.error);
+  }
+
+  private buildActivityAuditQuery(): { [key: string]: string | number } {
+    const query: { [key: string]: string | number } = {
+      limit: this.activityAuditLimit,
+    };
+    for (const [key, value] of Object.entries(this.activityAuditFilters)) {
+      const clean = String(value || '').trim();
+      if (clean.length > 0) {
+        query[key] = clean;
+      }
+    }
+    return query;
   }
 
   public getCss(type: NotificationType): string {
@@ -144,5 +200,3 @@ export class AdminComponent implements OnInit, AfterViewInit {
     return 'info';
   }
 }
-
-

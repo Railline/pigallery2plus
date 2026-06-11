@@ -55,3 +55,7 @@ nav.sticky-top {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.activity-filter-link {
+  vertical-align: baseline;
+}

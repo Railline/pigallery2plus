@@ -147,6 +147,82 @@
               </button>
             </div>
           </div>
+          <div class="card-body border-bottom">
+            <form class="row g-2 align-items-end" (ngSubmit)="loadActivityAudit()">
+              <div class="col-sm-6 col-lg-2">
+                <label class="form-label small mb-1" for="activity-user">User</label>
+                <input id="activity-user"
+                       class="form-control form-control-sm"
+                       name="activity-user"
+                       [(ngModel)]="activityAuditFilters.user"
+                       placeholder="name or login"/>
+              </div>
+              <div class="col-sm-6 col-lg-2">
+                <label class="form-label small mb-1" for="activity-action">Action</label>
+                <select id="activity-action"
+                        class="form-select form-select-sm"
+                        name="activity-action"
+                        [(ngModel)]="activityAuditFilters.action">
+                  <option *ngFor="let action of activityAuditActions" [value]="action">
+                    {{action || 'All'}}
+                  </option>
+                </select>
+              </div>
+              <div class="col-sm-6 col-lg-2">
+                <label class="form-label small mb-1" for="activity-ip">IP</label>
+                <input id="activity-ip"
+                       class="form-control form-control-sm"
+                       name="activity-ip"
+                       [(ngModel)]="activityAuditFilters.ip"
+                       placeholder="192.168..."/>
+              </div>
+              <div class="col-sm-6 col-lg-1">
+                <label class="form-label small mb-1" for="activity-status">Status</label>
+                <input id="activity-status"
+                       class="form-control form-control-sm"
+                       name="activity-status"
+                       [(ngModel)]="activityAuditFilters.status"
+                       placeholder="200"/>
+              </div>
+              <div class="col-sm-6 col-lg-2">
+                <label class="form-label small mb-1" for="activity-text">URL / referer</label>
+                <input id="activity-text"
+                       class="form-control form-control-sm"
+                       name="activity-text"
+                       [(ngModel)]="activityAuditFilters.text"
+                       placeholder="/gallery"/>
+              </div>
+              <div class="col-sm-6 col-lg-1">
+                <label class="form-label small mb-1" for="activity-from">From</label>
+                <input id="activity-from"
+                       class="form-control form-control-sm"
+                       type="date"
+                       name="activity-from"
+                       [(ngModel)]="activityAuditFilters.from"/>
+              </div>
+              <div class="col-sm-6 col-lg-1">
+                <label class="form-label small mb-1" for="activity-to">To</label>
+                <input id="activity-to"
+                       class="form-control form-control-sm"
+                       type="date"
+                       name="activity-to"
+                       [(ngModel)]="activityAuditFilters.to"/>
+              </div>
+              <div class="col-sm-6 col-lg-1 d-flex gap-2">
+                <button type="submit"
+                        class="btn btn-sm btn-primary flex-grow-1"
+                        [disabled]="activityAuditLoading">
+                  Apply
+                </button>
+                <button type="button"
+                        class="btn btn-sm btn-secondary"
+                        [disabled]="activityAuditLoading"
+                        (click)="resetActivityAuditFilters()">
+                  Reset
+                </button>
+              </div>
+            </form>
+          </div>
           <div class="card-body p-0">
             <div *ngIf="activityAuditError" class="alert alert-danger m-3">
               {{activityAuditError}}
@@ -175,11 +251,19 @@
                 <tr *ngFor="let entry of activityAuditEntries">
                   <td class="text-nowrap">{{entry.time | date:'medium'}}</td>
                   <td>
-                    <div>{{entry.user?.name || 'guest'}}</div>
+                    <button type="button"
+                            class="btn btn-link btn-sm p-0 activity-filter-link"
+                            (click)="filterActivityAuditBy('user', entry.user?.name)">
+                      {{entry.user?.name || 'guest'}}
+                    </button>
                     <small class="text-secondary">{{entry.loginUser ? 'login: ' + entry.loginUser : entry.user?.role}}</small>
                   </td>
                   <td>
-                    <span class="badge text-bg-secondary">{{entry.action}}</span>
+                    <button type="button"
+                            class="badge text-bg-secondary border-0"
+                            (click)="filterActivityAuditBy('action', entry.action)">
+                      {{entry.action}}
+                    </button>
                     <div class="small text-secondary">{{entry.method}}</div>
                   </td>
                   <td>
@@ -191,7 +275,13 @@
                     </span>
                   </td>
                   <td class="text-nowrap">{{entry.durationMs}} ms</td>
-                  <td class="text-nowrap">{{entry.ip}}</td>
+                  <td class="text-nowrap">
+                    <button type="button"
+                            class="btn btn-link btn-sm p-0 activity-filter-link"
+                            (click)="filterActivityAuditBy('ip', entry.ip)">
+                      {{entry.ip}}
+                    </button>
+                  </td>
                   <td class="activity-url" [title]="entry.url">{{entry.url}}</td>
                   <td class="activity-url text-secondary" [title]="entry.referer">{{entry.referer}}</td>
                 </tr>

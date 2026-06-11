@@ -7,14 +7,46 @@ import {JobStartDTO} from '../../../common/entities/job/JobDTO';
 import {ActivityAuditMWs} from '../ActivityAuditMWs';
 
 export class AdminMWs {
+  private static cleanQueryString(value: unknown): string | undefined {
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+    const trimmed = value.trim().toLowerCase();
+    return trimmed.length > 0 ? trimmed.slice(0, 256) : undefined;
+  }
+
+  private static parseQueryTime(value: unknown, endOfDay = false): number | undefined {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      return undefined;
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return undefined;
+    }
+    if (endOfDay && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      date.setHours(23, 59, 59, 999);
+    }
+    return date.getTime();
+  }
+
   public static async getActivityAuditLog(
     req: Request,
     res: Response,
     next: NextFunction
   ): Promise<void> {
     try {
-      const limit = Math.min(Math.max(parseInt(req.query.limit as string, 10) || 200, 1), 1000);
-      req.resultPipe = await ActivityAuditMWs.readRecent(limit);
+      const limit = Math.min(Math.max(parseInt(req.query.limit as string, 10) || 100, 1), 1000);
+      const status = parseInt(req.query.status as string, 10);
+      req.resultPipe = await ActivityAuditMWs.readRecent({
+        limit,
+        user: AdminMWs.cleanQueryString(req.query.user),
+        action: AdminMWs.cleanQueryString(req.query.action),
+        ip: AdminMWs.cleanQueryString(req.query.ip),
+        text: AdminMWs.cleanQueryString(req.query.text),
+        status: Number.isFinite(status) ? status : undefined,
+        from: AdminMWs.parseQueryTime(req.query.from),
+        to: AdminMWs.parseQueryTime(req.query.to, true),
+      });
       return next();
     } catch (err) {
       if (err instanceof Error) {

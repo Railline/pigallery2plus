@@ -15,11 +15,22 @@ const REDACTED_QUERY_KEYS = new Set([
   'code',
 ]);
 
+export interface ActivityAuditQuery {
+  limit: number;
+  user?: string;
+  action?: string;
+  ip?: string;
+  status?: number;
+  text?: string;
+  from?: number;
+  to?: number;
+}
+
 export class ActivityAuditMWs {
   private static logPath: string = null;
   private static rotating = false;
 
-  public static async readRecent(limit: number): Promise<Record<string, unknown>[]> {
+  public static async readRecent(query: ActivityAuditQuery): Promise<Record<string, unknown>[]> {
     const logPath = ActivityAuditMWs.getLogPath();
     return new Promise((resolve, reject) => {
       fs.readFile(logPath, 'utf8', (err, content) => {
@@ -30,29 +41,65 @@ export class ActivityAuditMWs {
           return reject(err);
         }
 
-        const lines = content
+        const entries = content
           .trim()
           .split('\n')
           .filter(Boolean)
-          .slice(-limit);
-        const entries = lines.map((line) => {
-          try {
-            return JSON.parse(line);
-          } catch {
-            return {
-              time: null,
-              action: 'parse-error',
-              method: '',
-              url: line.slice(0, 4096),
-              status: 0,
-              durationMs: 0,
-              user: {name: 'unknown', role: 'unknown'},
-            };
-          }
-        });
-        resolve(entries.reverse());
+          .map((line) => {
+            try {
+              return JSON.parse(line);
+            } catch {
+              return {
+                time: null,
+                action: 'parse-error',
+                method: '',
+                url: line.slice(0, 4096),
+                status: 0,
+                durationMs: 0,
+                user: {name: 'unknown', role: 'unknown'},
+              };
+            }
+          })
+          .filter((entry) => ActivityAuditMWs.matchesQuery(entry, query))
+          .slice(-query.limit)
+          .reverse();
+        resolve(entries);
       });
     });
+  }
+
+  private static matchesQuery(entry: Record<string, unknown>, query: ActivityAuditQuery): boolean {
+    const userName = String((entry.user as { name?: unknown } | undefined)?.name || '').toLowerCase();
+    const loginUser = String(entry.loginUser || '').toLowerCase();
+    const action = String(entry.action || '').toLowerCase();
+    const ip = String(entry.ip || '').toLowerCase();
+    const url = String(entry.url || '').toLowerCase();
+    const referer = String(entry.referer || '').toLowerCase();
+    const status = Number(entry.status);
+    const entryTime = Date.parse(String(entry.time || ''));
+
+    if (query.user && !userName.includes(query.user) && !loginUser.includes(query.user)) {
+      return false;
+    }
+    if (query.action && action !== query.action) {
+      return false;
+    }
+    if (query.ip && !ip.includes(query.ip)) {
+      return false;
+    }
+    if (typeof query.status === 'number' && status !== query.status) {
+      return false;
+    }
+    if (query.text && !url.includes(query.text) && !referer.includes(query.text)) {
+      return false;
+    }
+    if (query.from && (!entryTime || entryTime < query.from)) {
+      return false;
+    }
+    if (query.to && (!entryTime || entryTime > query.to)) {
+      return false;
+    }
+    return true;
   }
 
   public static audit(req: Request, res: Response, next: NextFunction): void {
