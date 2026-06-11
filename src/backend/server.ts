@@ -20,6 +20,7 @@ import {ConfigClassBuilder} from 'typeconfig/node';
 import {ConfigClassOptions} from 'typeconfig/src/decorators/class/IConfigClass';
 import {ServerConfig} from '../common/config/private/PrivateConfig';
 import {SecurityMWs} from './middlewares/SecurityMWs';
+import {ActivityAuditMWs} from './middlewares/ActivityAuditMWs';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const session = require('cookie-session');
@@ -102,6 +103,7 @@ export class Server {
     // for parsing application/json
     this.app.use(express.json());
     this.app.use(cookieParser());
+    this.app.use(ActivityAuditMWs.audit);
 
     this.app.use(SecurityMWs.securityHeaders);
     this.app.use(SecurityMWs.csrfOriginCheck);
@@ -236,7 +238,6 @@ export class Server {
     });
   }
 }
-
 
 
 
