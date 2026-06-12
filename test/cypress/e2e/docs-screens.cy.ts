@@ -12,8 +12,8 @@ describe('Docs generation', () => {
     cy.get('#password').clear();
     cy.get('#password').type('admin');
     cy.intercept({
-      method: 'Get',
-      url: '/pgapi/gallery/content/',
+      method: 'GET',
+      url: '**/pgapi/gallery/content*',
     }).as('getContent');
     cy.get('.col-sm-12 > .btn').click();
   });
