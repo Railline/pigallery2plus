@@ -15,7 +15,7 @@
     "pretest": "tsc",
     "test": "ng test  && nyc mocha test --exclude test/cypress/**/*.js --exclude folder-reset.js",
     "test-frontend": "ng test",
-    "test-backend": "tsc && mocha test --exclude test/cypress/**/*.js --exclude folder-reset.js",
+    "test-backend": "tsc && mocha test --exit --exclude test/cypress/**/*.js --exclude folder-reset.js",
     "coverage": "nyc report --reporter=lcov",
     "start": "node ./src/backend/index",
     "run-diagnostics": "node ./src/backend/index --run-diagnostics --Server-Log-level=silly",
