@@ -16,8 +16,7 @@ describe('Faces', () => {
       url: '/pgapi/person',
     }).as('getPerson');
     cy.get('.col-sm-12 > .btn').click();
-    // make sure that the dir is parsed before navigating to faces
-    cy.wait('@getContent');
+    cy.get('.mb-0 > :nth-child(1) > .nav-link').contains('Gallery');
     cy.get('nav .nav-item .nav-link').contains('Faces').click({force: true});
   });
   it('Show faces', () => {

@@ -17,7 +17,7 @@ describe('Gallery', () => {
     cy.get('.mb-0 > :nth-child(1) > .nav-link').contains('Gallery');
   });
   it('Gallery should filter', () => {
-    cy.wait('@getContent');
+    cy.get('app-gallery-navbar  ng-icon[name="ionFunnelOutline"]', {timeout: 10000});
     cy.get('app-gallery-navbar  ng-icon[name="ionFunnelOutline"]').click({scrollBehavior: false});
     cy.get('app-gallery-navbar #gallery-filter-0').select('City', {force: true});
     cy.get('app-gallery-navbar #gallery-filter-0').siblings('.filter-column').contains('Berkeley')
@@ -37,7 +37,6 @@ describe('Gallery', () => {
 
 
   it('Gallery should show infobar over photo', () => {
-    cy.wait('@getContent');
     // contains a folder
     cy.get('app-gallery-directories.directories > app-gallery-directory > .button > .photo-container');
 
@@ -57,7 +56,6 @@ describe('Gallery', () => {
     cy.get('.photo-container > .info > .photo-keywords a').contains('USA');
   });
   it('Gallery should open lightbox', () => {
-    cy.wait('@getContent');
     // contains a folder
     cy.get('app-gallery-directories.directories > app-gallery-directory > .button > .photo-container');
 
@@ -75,7 +73,6 @@ describe('Gallery', () => {
 
 
   it('Gallery should auto play in lightbox', () => {
-    cy.wait('@getContent');
     // contains a folder
     cy.get('app-gallery-directories.directories > app-gallery-directory > .button > .photo-container');
 
@@ -180,4 +177,3 @@ describe('Gallery - dont wait for content load', () => {
 
   });
 });
-

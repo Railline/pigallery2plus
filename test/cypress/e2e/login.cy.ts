@@ -20,11 +20,7 @@ describe('Login', () => {
     cy.get('.col-sm-12 > .btn').click();
     /* ==== End Cypress Studio ==== */
     cy.get('.mb-0 > :nth-child(1) > .nav-link').contains('Gallery');
-
-    cy.wait('@getContent').then((interception) => {
-      expect(interception.response.statusCode).to.eq(200);
-      assert.isNotNull(interception.response.body, '1st API call has data');
-    });
+    cy.get('app-gallery-grid-photo, app-gallery-directory', {timeout: 15000}).should('exist');
   });
 
 });

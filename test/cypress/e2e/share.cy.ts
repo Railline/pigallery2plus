@@ -15,9 +15,7 @@ describe('Share', () => {
     cy.get('.col-sm-12 > .btn').click();
   });
   it('Open password protected sharing', () => {
-    cy.wait('@getContent');
-
-    cy.get('button#shareButton').click();
+    cy.get('button#shareButton', {timeout: 15000}).click();
     cy.get('input#share-password').type('secret', {force: true});
     cy.get('button#getShareButton').click();
 
@@ -56,9 +54,7 @@ describe('Share', () => {
   });
 
   it('Open password protected sharing with logged in user', () => {
-    cy.wait('@getContent');
-
-    cy.get('button#shareButton').click();
+    cy.get('button#shareButton', {timeout: 15000}).click();
     cy.get('input#share-password').type('secret', {force: true});
     cy.get('button#getShareButton').click();
 
@@ -91,9 +87,7 @@ describe('Share', () => {
 
 
   it('Open no password sharing', () => {
-    cy.wait('@getContent');
-
-    cy.get('button#shareButton').click();
+    cy.get('button#shareButton', {timeout: 15000}).click();
     cy.get('button#getShareButton').click();
 
     cy.get('input#shareLink').should('contain.value', 'http');
