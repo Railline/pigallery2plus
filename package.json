@@ -1,9 +1,9 @@
 {
-  "name": "pigallery2",
-  "version": "3.6.0-edge",
-  "description": "This is a photo gallery optimised for running low resource servers (especially on raspberry pi)",
-  "author": "Patrik J. Braun",
-  "homepage": "https://github.com/bpatrik/pigallery2",
+  "name": "pigallery2plus",
+  "version": "3.6.0-plus.1",
+  "description": "PiGallery2 Plus is a performance and metadata focused fork of PiGallery2",
+  "author": "Patrik J. Braun and PiGallery2 Plus contributors",
+  "homepage": "https://github.com/Railline/pigallery2plus",
   "license": "MIT",
   "main": "./src/backend/index.js",
   "bin": "./src/backend/index.js",
@@ -32,10 +32,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/bpatrik/PiGallery2.git"
+    "url": "git+https://github.com/Railline/pigallery2plus.git"
   },
   "bugs": {
-    "url": "https://github.com/bpatrik/PiGallery2/issues"
+    "url": "https://github.com/Railline/pigallery2plus/issues"
   },
   "dependencies": {
     "adm-zip": "0.5.16",

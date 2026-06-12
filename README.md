@@ -1,41 +1,85 @@
-# PiGallery2
-![GitHub package.json version](https://img.shields.io/github/package-json/v/bpatrik/pigallery2)
-[![Coverage Status](https://coveralls.io/repos/github/bpatrik/pigallery2/badge.svg?branch=master)](https://coveralls.io/github/bpatrik/pigallery2?branch=master)
-[![Docker build](https://github.com/bpatrik/pigallery2/workflows/docker-buildx/badge.svg)](https://github.com/bpatrik/pigallery2/actions)
+# PiGallery2 Plus
 
-PiGallery2 is a **fast** directory-first photo gallery website, optimized for running on low-resource servers (especially on Raspberry Pi).
+PiGallery2 Plus is a performance and metadata focused fork of [PiGallery2](https://github.com/bpatrik/pigallery2).
+It keeps the original directory-first gallery model, while adding features useful for large private archives and Gallery Grabber style metadata.
 
-## 🚀 Key Features
-- **⚡ Fast**: Optimized for low-end hardware.
-- **✔️ Simple**: Point to your photos and you are ready.
-- **📁 Directory-first**: Shows your folder structure as it is.
-- **Read-only**: Your photo folder is never modified.
+## Docker
 
-[Full documentation here](http://bpatrik.github.io/pigallery2/).
+Recommended image:
 
-[Try our live demo!](https://pigallery2.onrender.com/) (First load may take up to 60s while the server boots up)
+```sh
+docker pull railline/pigallery2plus:latest
+```
 
-## 🏁 Getting Started
-The official and recommended way to run PiGallery2 is using **Docker**.
+Versioned releases are published from Git tags:
 
-### [Install with Docker (Recommended)](https://bpatrik.github.io/pigallery2/setup/docker)
+```sh
+docker pull railline/pigallery2plus:3.6.0-plus.1
+```
 
+Minimal run example:
 
-### [Native Installation (Unsupported)](https://bpatrik.github.io/pigallery2/setup/direct-install)
-Native installation is possible for users familiar with Node.js but is not officially supported.
+```sh
+docker run -d \
+  --name pigallery2plus \
+  -p 80:80 \
+  -e TZ=Europe/Paris \
+  -v ./config:/app/data/config \
+  -v ./db:/app/data/db \
+  -v ./tmp:/app/data/tmp \
+  -v ./images:/app/data/images:ro \
+  railline/pigallery2plus:latest
+```
 
-## 📖 Documentation
-For more detailed information, please see our [Documentation Website](http://bpatrik.github.io/pigallery2) or the `docs/` folder:
-- [FAQ (Frequently Asked Questions)](https://bpatrik.github.io/pigallery2/faq)
-- [Configuration Guide](https://bpatrik.github.io/pigallery2/user-guide/configuration)
-- [User Rights](https://bpatrik.github.io/pigallery2/user-guide/user-rights)
-- [Contribution Guide](https://bpatrik.github.io/pigallery2/development/contributing)
+The image follows the upstream PiGallery2 layout:
 
-## 🤝 Contributing
-Contributions are welcome! Please read our [Contribution Guide](https://bpatrik.github.io/pigallery2/development/contributing) to get started.
+- `/app/data/config`: application configuration
+- `/app/data/db`: database files when using SQLite
+- `/app/data/tmp`: cache and temporary files
+- `/app/data/images`: read-only media library mount
 
-## ⭐ Star History
-[![Star History Chart](https://api.star-history.com/svg?repos=bpatrik/pigallery2&type=date&legend=top-left)](https://www.star-history.com/#bpatrik/pigallery2&type=date&legend=top-left)
+## Added Features
 
-## 📜 License
-PiGallery2 is licensed under the MIT License.
+- Faster large-gallery browsing with incremental loading improvements for very large archives.
+- Share-link fixes for guest and limited guest browsing.
+- Public random-image URLs that can use a share key and constrained search query.
+- Editable random-link query support in the sharing workflow.
+- Admin-only debug overlay controls.
+- Activity audit logging for user actions, logins, share-link use, and admin views.
+- Settings UI access to recent activity logs with filtering by user, IP, action, and time window.
+- Gallery Grabber metadata display support for source site, source URL, preserved filename, creator, and private-gallery markers.
+- Additional backend hardening around share authentication and stale session handling.
+- CI coverage for frontend, backend, Cypress, and multi-platform Docker verification.
+
+## Security Notes
+
+- Media folders should be mounted read-only unless you explicitly need write access.
+- Share links can be passwordless by design; expose only the folders or searches you intend to share.
+- Random image URLs with a share key are public to anyone who has the URL.
+- Do not commit real configs, logs, database files, cookies, API keys, tokens, or private media into this repository.
+- Put the app behind a reverse proxy with HTTPS when exposing it publicly.
+- Configure trusted proxy settings according to your deployment if you rely on client IP logging or rate controls.
+- Keep the Docker image updated and rotate share keys if a link was exposed too broadly.
+
+## Relationship To PiGallery2
+
+This fork is based on PiGallery2 and remains MIT licensed. The original project documentation is still useful for base configuration and operational concepts:
+
+- [PiGallery2 documentation](https://bpatrik.github.io/pigallery2/)
+- [PiGallery2 upstream repository](https://github.com/bpatrik/pigallery2)
+
+## Development
+
+```sh
+npm ci --include=optional
+npm run build
+npm run test-frontend
+npm run test-backend
+npm run cypress:run
+```
+
+Docker release verification is handled by GitHub Actions for Debian Trixie and Alpine variants.
+
+## License
+
+MIT, following the upstream PiGallery2 license.
