@@ -49,9 +49,16 @@ jobs:
     - name: lint
       run: |
         npm run lint
-    - name: test
+    - name: frontend tests
+      timeout-minutes: 10
       run: |
-        npm test
+        npm run test-frontend
+      env:
+        CI: true
+    - name: backend tests
+      timeout-minutes: 10
+      run: |
+        npm run test-backend
         npm run coverage
       env:
         MYSQL_HOST: localhost
