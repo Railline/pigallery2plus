@@ -37,7 +37,16 @@ module.exports = function (config) {
     colors: true,
     logLevel: config.LOG_INFO,
     autoWatch: false,
-    browsers: ["ChromeHeadless"],
+    browsers: [process.env.CI ? 'ChromeHeadlessCI' : 'ChromeHeadless'],
+    customLaunchers: {
+      ChromeHeadlessCI: {
+        base: 'ChromeHeadless',
+        flags: ['--no-sandbox', '--disable-dev-shm-usage']
+      }
+    },
+    browserNoActivityTimeout: 60000,
+    captureTimeout: 120000,
+    processKillTimeout: 10000,
     singleRun: true
   });
 };
