@@ -53,10 +53,16 @@ export class ShareService {
             QueryParams.gallery.sharingKey_query
             ] || null;
 
-        const changed = this.sharingKey !== (this.param || this.queryParam);
+        const routeSharingKey = this.param || this.queryParam || null;
+        const changed = this.sharingKey !== routeSharingKey;
         if (changed) {
-          this.sharingKey = this.param || this.queryParam || this.sharingKey;
-          await this.checkSharing();
+          this.sharingKey = routeSharingKey;
+          if (this.sharingKey) {
+            await this.checkSharing();
+          } else {
+            this.sharingSubject.next(null);
+            this.sharingIsValid.next(null);
+          }
         }
         if (this.resolve) {
           this.resolve();
@@ -168,6 +174,14 @@ export class ShareService {
 
   public isSharing(): boolean {
     return this.sharingKey != null;
+  }
+
+  public clearSharing(): void {
+    this.param = null;
+    this.queryParam = null;
+    this.sharingKey = null;
+    this.sharingSubject.next(null);
+    this.sharingIsValid.next(null);
   }
 
   public async getSharingListForQuery(

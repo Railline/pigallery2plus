@@ -189,14 +189,13 @@ export class GalleryRouter {
       // common part
       SecurityMWs.crossOriginRandomResource,
       GalleryMWs.setRandomSharingKeyParam,
-      AuthenticationMWs.authenticate,
-      AuthenticationMWs.authorise(UserRoles.LimitedGuest),
-      VersionMWs.injectGalleryVersion,
 
       // specific part
       GalleryMWs.loadRandomLinkQuery,
+      VersionMWs.injectGalleryVersion,
       GalleryMWs.getRandomImage,
       GalleryMWs.loadFile,
+      GalleryMWs.clearTemporaryRandomLinkContext,
       ServerTimingMWs.addServerTiming,
       RenderingMWs.renderFile
     );

@@ -142,7 +142,7 @@ export class FrameComponent {
 
   logout(): void {
     this.authService.logout(false).then(() => {
-      this.router.navigateByUrl('/login').catch(console.error);
+      this.router.navigate(['/login'], {replaceUrl: true, queryParams: {}}).catch(console.error);
     }).catch(console.error);
   }
 
@@ -205,4 +205,3 @@ export class FrameComponent {
   }
 
 }
-

@@ -17,6 +17,8 @@ import {SearchQueryUtils} from '../../common/SearchQueryUtils';
 import {LocationLookupException} from '../exceptions/LocationLookupException';
 import {ServerTime} from './ServerTimingMWs';
 import {Logger} from '../Logger';
+import {UserRoles} from '../../common/entities/UserDTO';
+import {ContextUser} from '../model/SessionContext';
 
 export class GalleryMWs {
   private static readonly RANDOM_CACHE_TTL = 15 * 60 * 1000;
@@ -577,8 +579,19 @@ export class GalleryMWs {
         return next(new ErrorDTO(ErrorCodes.INPUT_ERROR, 'No sharing key provided'));
       }
       const sharing = await ObjectManagers.getInstance().SharingManager.findOne(sharingKey);
-      if (!sharing || !sharing.searchQuery) {
+      if (!sharing || sharing.expires < Date.now() || !sharing.searchQuery) {
         return next(new ErrorDTO(ErrorCodes.INPUT_ERROR, 'Sharing link not found'));
+      }
+      if (!req.session.context) {
+        const user = {
+          name: 'Guest',
+          role: UserRoles.LimitedGuest,
+          usedSharingKey: sharing.sharingKey,
+          overrideAllowBlockList: true,
+          allowQuery: ObjectManagers.getInstance().SessionManager.buildAllowListForSharing(sharing)
+        } as ContextUser;
+        req.session.context = await ObjectManagers.getInstance().SessionManager.buildContext(user);
+        (req as any).temporaryRandomLinkContext = true;
       }
       req.resultPipe = sharing.searchQuery;
       return next();
@@ -590,6 +603,18 @@ export class GalleryMWs {
         )
       );
     }
+  }
+
+  public static clearTemporaryRandomLinkContext(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): void {
+    if ((req as any).temporaryRandomLinkContext) {
+      delete req.session.context;
+      delete (req as any).temporaryRandomLinkContext;
+    }
+    return next();
   }
 
   private static getRandomCacheKey(req: Request, query: SearchQueryDTO): string {

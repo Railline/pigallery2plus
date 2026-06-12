@@ -100,6 +100,7 @@ export class AuthenticationService {
     await this.userService.logout();
     this.user.next(null);
     if (!restoreSharingSession) {
+      this.shareService.clearSharing();
       return;
     }
     // Keep automatic share sessions on auth errors, but allow explicit logout to leave them.
