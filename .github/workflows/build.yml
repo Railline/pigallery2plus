@@ -43,7 +43,6 @@ jobs:
     - name: npm install and build
       run: |
         npm ci --include=optional
-        npm install --include=optional --no-save --package-lock=false sharp@0.34.2
         npm run build
 
     - name: lint
