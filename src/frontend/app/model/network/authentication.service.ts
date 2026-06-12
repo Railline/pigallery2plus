@@ -55,7 +55,7 @@ export class AuthenticationService {
         return true;
       }
       if (error.code === ErrorCodes.NOT_AUTHORISED) {
-        this.logout().catch(console.error);
+        this.logout(false).catch(console.error);
         return true;
       }
       return false;
