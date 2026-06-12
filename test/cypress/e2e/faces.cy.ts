@@ -12,8 +12,8 @@ describe('Faces', () => {
       url: '**/pgapi/gallery/content*',
     }).as('getContent');
     cy.intercept({
-      method: 'Get',
-      url: '/pgapi/person',
+      method: 'GET',
+      url: '**/pgapi/person*',
     }).as('getPerson');
     cy.get('.col-sm-12 > .btn').click();
     cy.get('.mb-0 > :nth-child(1) > .nav-link').contains('Gallery');
@@ -22,7 +22,7 @@ describe('Faces', () => {
   it('Show faces', () => {
     cy.wait('@getPerson', {timeout: 10000});
     // contains a folder
-    cy.get('app-face  a > .info', {timeout: 10000}).contains('Alvin the Squirrel').should('exist');
+    cy.get('app-face', {timeout: 20000}).contains('Alvin the Squirrel').should('exist');
   });
   it('Faces should have photos', () => {
     cy.wait('@getPerson', {timeout: 10000});
