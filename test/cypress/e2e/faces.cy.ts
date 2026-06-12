@@ -17,7 +17,7 @@ describe('Faces', () => {
     }).as('getPerson');
     cy.get('.col-sm-12 > .btn').click();
     cy.get('.mb-0 > :nth-child(1) > .nav-link').contains('Gallery');
-    cy.get('nav .nav-item .nav-link').contains('Faces').click({force: true});
+    cy.visit('/faces');
   });
   it('Show faces', () => {
     cy.wait('@getPerson', {timeout: 10000});
