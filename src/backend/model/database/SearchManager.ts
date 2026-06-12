@@ -44,6 +44,33 @@ export class SearchManager {
   // makes all search query params unique, so typeorm won't mix them
   private queryIdBase = 0;
 
+  private static cleanEmptyGalleryGrabberMetadata(media: Array<{ metadata?: unknown }>): void {
+    const isEmpty = (value: unknown): boolean =>
+      value === null ||
+      typeof value === 'undefined' ||
+      (Array.isArray(value) && value.every(v => v === null || typeof v === 'undefined' || v === ''));
+    const keys = [
+      'galleryGrabberCreator',
+      'galleryGrabberPreservedFileName',
+      'galleryGrabberSource',
+      'galleryGrabberSourceUrl',
+      'galleryGrabberSpecialInstructions',
+      'galleryGrabberPrivateMarker'
+    ];
+
+    for (const item of media) {
+      const metadata = item.metadata as Record<string, unknown>;
+      if (!metadata) {
+        continue;
+      }
+      for (const key of keys) {
+        if (isEmpty(metadata[key])) {
+          delete metadata[key];
+        }
+      }
+    }
+  }
+
   public static setSorting<T>(
     query: SelectQueryBuilder<T>,
     sortings: SortingMethod[]
@@ -385,6 +412,7 @@ export class SearchManager {
     }
 
     result.media = await q.getMany();
+    SearchManager.cleanEmptyGalleryGrabberMetadata(result.media);
 
     if (result.media.length > Config.Search.maxMediaResult) {
       result.resultOverflow = true;
@@ -979,7 +1007,7 @@ export class SearchManager {
 
       const getLikeExpr = (fieldName: string, paramName: string): string => {
         const op = (query as TextSearch).negate ? 'NOT LIKE' : 'LIKE';
-        return `${fieldName} ${op} :${paramName}${queryId} COLLATE ${SQL_COLLATE}`;
+        return `${fieldName} ${op} :${paramName}${queryId} COLLATE ${SQL_COLLATE} ESCAPE '\\'`;
       };
 
       const textParam: { [key: string]: unknown } = {};
@@ -1070,7 +1098,7 @@ export class SearchManager {
             qbr[whereFN](
               new Brackets((qb): void => {
                 const globPattern = convertGlobToLike((query as TextSearch).value);
-                const esc = '';
+                const esc = ' ESCAPE \'\\\\\'';
 
                 const op = (query as TextSearch).negate ? 'NOT LIKE' : 'LIKE';
 

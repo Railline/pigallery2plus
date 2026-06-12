@@ -56,11 +56,13 @@ describe('UploadRouter', () => {
 
   const setUp = async () => {
     Config.Upload.enabled = true;
+    Config.Upload.enforcedDirectoryConfig = false;
     await sqlHelper.initDB();
     server = new Server(false);
     await server.onStarted.wait();
     await ObjectManagers.getInstance().init();
     Config.Upload.enabled = true; // Set it again after init
+    Config.Upload.enforcedDirectoryConfig = false;
     await ObjectManagers.getInstance().UserManager.createUser(Utils.clone(adminUser));
     await SQLConnection.close();
   };
