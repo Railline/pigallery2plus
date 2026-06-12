@@ -55,7 +55,7 @@ export class AuthenticationService {
         return true;
       }
       if (error.code === ErrorCodes.NOT_AUTHORISED) {
-        this.logout(false).catch(console.error);
+        this.clearUser();
         return true;
       }
       return false;
@@ -90,6 +90,10 @@ export class AuthenticationService {
 
   public isAuthorized(role: UserRoles): boolean {
     return this.user.value && this.user.value.role >= role;
+  }
+
+  public clearUser(): void {
+    this.user.next(null);
   }
 
   public canSearch(): boolean {

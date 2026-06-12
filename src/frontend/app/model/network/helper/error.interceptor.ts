@@ -20,8 +20,8 @@ export class ErrorInterceptor implements HttpInterceptor {
     return next.handle(request).pipe(
       catchError((err) => {
         if (err.status === 401) {
-          // auto logout if 401 response returned from server
-          this.authenticationService.logout(false);
+          // Drop stale auth state without clearing the current share route.
+          this.authenticationService.clearUser();
         }
         if (err.status === 500 && err.error.error.code === ErrorCodes.INTERNAL) {
           // Unknown server error
