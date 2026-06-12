@@ -17,7 +17,10 @@ describe('Faces', () => {
     }).as('getPerson');
     cy.get('.col-sm-12 > .btn').click();
     cy.get('.mb-0 > :nth-child(1) > .nav-link').contains('Gallery');
-    cy.wait('@getContent', {timeout: 20000});
+    cy.request('/pgapi/gallery/content/?mo=0&mt=120&msm=20&msa=1');
+    cy.request('/pgapi/person')
+      .its('body.result')
+      .should('have.length.greaterThan', 0);
     cy.visit('/faces');
   });
   it('Show faces', () => {
