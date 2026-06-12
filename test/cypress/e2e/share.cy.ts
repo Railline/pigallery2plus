@@ -1,4 +1,11 @@
 describe('Share', () => {
+  const getSharingKeyFromLink = (link: string): string => {
+    const url = new URL(link);
+    return url.searchParams.get('sk') ||
+      url.pathname.split('/').filter(Boolean).pop() ||
+      '';
+  };
+
   beforeEach(() => {
     cy.viewport(1200, 600);
     cy.visit('/');
@@ -35,10 +42,12 @@ describe('Share', () => {
           delete req.headers['if-none-match'];
           delete req.headers['if-modified-since'];
         }).as('getSharedContent');
-        const url = new URL(link);
-        const sk = url.pathname.split('/').pop();
+        const sk = getSharingKeyFromLink(link);
         cy.visit('/shareLogin?sk=' + sk);
-        cy.get('input#password').type('secret');
+        cy.get('input#password', {timeout: 15000})
+          .should('be.visible')
+          .and('be.enabled')
+          .type('secret');
         cy.get('button#button-share-login').click();
 
 
@@ -95,8 +104,7 @@ describe('Share', () => {
           delete req.headers['if-none-match'];
           delete req.headers['if-modified-since'];
         }).as('getSharedContent');
-        const url = new URL(link);
-        const sk = url.pathname.split('/').pop();
+        const sk = getSharingKeyFromLink(link);
         cy.request({
           method: 'GET',
           url: '/pgapi/share/' + sk + '?sk=' + sk,
