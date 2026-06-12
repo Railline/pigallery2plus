@@ -965,17 +965,18 @@ export class SearchManager {
     }
 
     return new Brackets((q: WhereExpression) => {
+      const likeEscapeChar = '!';
       const convertGlobToLike = (str: string): string => {
         // Match either an escaped character \\(.) or any unescaped SQL/glob special character
-        return str.replace(/\\(.)|([*?%_])/g, (_, escaped, special) => {
+        return str.replace(/\\(.)|([!*?%_])/g, (_, escaped, special) => {
           if (escaped) {
             if (escaped === '*' || escaped === '?') {
               return escaped;
             } // \* -> *, \? -> ?
-            if (escaped === '\\') {
-              return '\\\\';
-            }                  // \\ -> \\
-            return '\\' + escaped;                                 // e.g., \% -> \%
+            if (escaped === likeEscapeChar || escaped === '%' || escaped === '_') {
+              return likeEscapeChar + escaped;
+            }
+            return escaped;
           }
 
           // Handle unescaped special characters
@@ -985,7 +986,7 @@ export class SearchManager {
           if (special === '?') {
             return '_';
           }
-          return '\\' + special;                                   // % -> \%, _ -> \_
+          return likeEscapeChar + special;                         // % -> !%, _ -> !_
         });
       };
 
@@ -1007,7 +1008,7 @@ export class SearchManager {
 
       const getLikeExpr = (fieldName: string, paramName: string): string => {
         const op = (query as TextSearch).negate ? 'NOT LIKE' : 'LIKE';
-        return `${fieldName} ${op} :${paramName}${queryId} COLLATE ${SQL_COLLATE} ESCAPE '\\'`;
+        return `${fieldName} ${op} :${paramName}${queryId} COLLATE ${SQL_COLLATE} ESCAPE '${likeEscapeChar}'`;
       };
 
       const textParam: { [key: string]: unknown } = {};
@@ -1098,7 +1099,7 @@ export class SearchManager {
             qbr[whereFN](
               new Brackets((qb): void => {
                 const globPattern = convertGlobToLike((query as TextSearch).value);
-                const esc = ' ESCAPE \'\\\\\'';
+                const esc = ` ESCAPE '${likeEscapeChar}'`;
 
                 const op = (query as TextSearch).negate ? 'NOT LIKE' : 'LIKE';
 
