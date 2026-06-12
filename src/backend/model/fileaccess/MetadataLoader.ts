@@ -327,6 +327,19 @@ export class MetadataLoader {
     const source = getFirst('iptc.Source', 'photoshop.Source', 'xmp.Source', 'xmp.source');
     const sourceUrl = getFirst('iptc.DocumentNotes', 'photoshop.DocumentNotes', 'xmp.DocumentNotes', 'xmp.documentNotes', 'ifd0.DocumentName');
     const specialInstructions = getFirst('iptc.SpecialInstructions', 'photoshop.Instructions', 'photoshop.SpecialInstructions', 'xmp.Instructions', 'xmp.SpecialInstructions');
+    const knownGrabberSources = ['deviantart', 'fanbox', 'gumroad', 'kemono', 'patreon', 'pixiv', 'wordpress'];
+    const normalizedSource = source.toLowerCase();
+    const isSourceUrl = /^https?:\/\//i.test(sourceUrl);
+    const isPrivateGallery = specialInstructions === 'Image From Private Railline Gallery';
+    const isGalleryGrabberMetadata =
+      !!preservedFileName ||
+      isSourceUrl ||
+      isPrivateGallery ||
+      knownGrabberSources.some((knownSource) => normalizedSource.includes(knownSource));
+
+    if (!isGalleryGrabberMetadata) {
+      return;
+    }
 
     if (creator) {
       metadata.galleryGrabberCreator = Utils.asciiToUTF8(creator);
@@ -338,29 +351,11 @@ export class MetadataLoader {
       metadata.galleryGrabberSource = Utils.asciiToUTF8(source);
     }
     if (sourceUrl) {
-      metadata.galleryGrabberSourceUrl = sourceUrl;
+      metadata.galleryGrabberSourceUrl = isSourceUrl ? sourceUrl : Utils.asciiToUTF8(sourceUrl);
     }
     if (specialInstructions) {
       metadata.galleryGrabberSpecialInstructions = Utils.asciiToUTF8(specialInstructions);
-      metadata.galleryGrabberPrivateMarker = metadata.galleryGrabberSpecialInstructions === 'Image From Private Railline Gallery';
-    }
-
-    const extraKeywords = [
-      metadata.galleryGrabberCreator,
-      metadata.galleryGrabberPreservedFileName,
-      metadata.galleryGrabberSource,
-      metadata.galleryGrabberSourceUrl,
-      metadata.galleryGrabberSpecialInstructions,
-    ].filter((value): value is string => !!value);
-    if (extraKeywords.length > 0) {
-      if (metadata.keywords === undefined) {
-        metadata.keywords = [];
-      }
-      for (const keyword of extraKeywords) {
-        if (metadata.keywords.indexOf(keyword) === -1) {
-          metadata.keywords.push(keyword);
-        }
-      }
+      metadata.galleryGrabberPrivateMarker = isPrivateGallery;
     }
   }
 
