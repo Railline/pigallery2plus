@@ -47,7 +47,7 @@ describe('Share', () => {
         cy.get('input#password', {timeout: 15000})
           .should('be.visible')
           .and('be.enabled')
-          .type('secret');
+          .type('secret', {force: true});
         cy.get('button#button-share-login').click();
 
 
