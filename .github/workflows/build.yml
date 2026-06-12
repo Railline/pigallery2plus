@@ -68,6 +68,7 @@ jobs:
         PORT: 35000
         CI: true
     - name: Coveralls
+      continue-on-error: true
       uses: coverallsapp/github-action@v2
     - name: E2E test - Cypress run
       uses: cypress-io/github-action@v7
