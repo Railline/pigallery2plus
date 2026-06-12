@@ -14,7 +14,7 @@ docker pull railline/pigallery2plus:latest
 Versioned releases are published from Git tags:
 
 ```sh
-docker pull railline/pigallery2plus:3.6.0-plus.2
+docker pull railline/pigallery2plus:3.6.0-plus.3
 ```
 
 Minimal run example:
