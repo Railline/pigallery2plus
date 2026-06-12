@@ -180,24 +180,59 @@ export class MediaMetadataEntity implements MediaMetadata {
   @Column({type: 'text', nullable: true})
   contentIdentifier: string;
 
-  @Column({type: 'text', nullable: true, charset: columnCharsetCS.charset, collation: columnCharsetCS.collation})
+  @Column({
+    type: 'text',
+    nullable: true,
+    charset: columnCharsetCS.charset,
+    collation: columnCharsetCS.collation,
+    transformer: {from: (v) => v || undefined, to: (v) => v || null}
+  })
   @Index()
   galleryGrabberCreator: string;
 
-  @Column({type: 'text', nullable: true, charset: columnCharsetCS.charset, collation: columnCharsetCS.collation})
+  @Column({
+    type: 'text',
+    nullable: true,
+    charset: columnCharsetCS.charset,
+    collation: columnCharsetCS.collation,
+    transformer: {from: (v) => v || undefined, to: (v) => v || null}
+  })
   galleryGrabberPreservedFileName: string;
 
-  @Column({type: 'text', nullable: true, charset: columnCharsetCS.charset, collation: columnCharsetCS.collation})
+  @Column({
+    type: 'text',
+    nullable: true,
+    charset: columnCharsetCS.charset,
+    collation: columnCharsetCS.collation,
+    transformer: {from: (v) => v || undefined, to: (v) => v || null}
+  })
   @Index()
   galleryGrabberSource: string;
 
-  @Column({type: 'text', nullable: true, charset: columnCharsetCS.charset, collation: columnCharsetCS.collation})
+  @Column({
+    type: 'text',
+    nullable: true,
+    charset: columnCharsetCS.charset,
+    collation: columnCharsetCS.collation,
+    transformer: {from: (v) => v || undefined, to: (v) => v || null}
+  })
   galleryGrabberSourceUrl: string;
 
-  @Column({type: 'text', nullable: true, charset: columnCharsetCS.charset, collation: columnCharsetCS.collation})
+  @Column({
+    type: 'text',
+    nullable: true,
+    charset: columnCharsetCS.charset,
+    collation: columnCharsetCS.collation,
+    transformer: {from: (v) => v || undefined, to: (v) => v || null}
+  })
   galleryGrabberSpecialInstructions: string;
 
-  @Column({type: 'boolean', nullable: false, default: false})
+  @Column({
+    type: 'boolean',
+    nullable: true,
+    default: null,
+    transformer: {from: (v) => v ? true : undefined, to: (v) => v ? true : null}
+  })
   @Index()
   galleryGrabberPrivateMarker: boolean;
 }
