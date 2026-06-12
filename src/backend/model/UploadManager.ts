@@ -14,6 +14,13 @@ export interface UploadError {
 }
 
 export class UploadManager {
+  private static normalizeRelativeDir(directory: string): string {
+    if (!directory || directory === path.sep || directory === '.') {
+      return '';
+    }
+    return directory;
+  }
+
   private static safeJoin(basePath: string, ...segments: string[]): string {
     const target = path.resolve(basePath, ...segments);
     const base = path.resolve(basePath);
@@ -35,7 +42,7 @@ export class UploadManager {
     if (Config.Upload.enabled === false) {
       throw new Error('Upload is disabled');
     }
-    const relativeDir = directory || '';
+    const relativeDir = UploadManager.normalizeRelativeDir(directory);
     const fullDirPath = UploadManager.safeJoin(ProjectPath.ImageFolder, relativeDir);
 
     if (Config.Upload.enforcedDirectoryConfig === true) {
@@ -51,7 +58,7 @@ export class UploadManager {
     const errors: UploadError[] = [];
     for (const file of files) {
       try {
-        await this.saveFile(directory, file);
+        await this.saveFile(relativeDir, file);
       } catch (e) {
         errors.push({filename: file.originalname, error: e.message});
       }
@@ -63,7 +70,7 @@ export class UploadManager {
   }
 
   public async saveFile(directory: string, file: Express.Multer.File): Promise<void> {
-    const relativeDir = directory || '';
+    const relativeDir = UploadManager.normalizeRelativeDir(directory);
     const fullDirPath = UploadManager.safeJoin(ProjectPath.ImageFolder, relativeDir);
     const safeName = UploadManager.safeOriginalName(file.originalname);
 
