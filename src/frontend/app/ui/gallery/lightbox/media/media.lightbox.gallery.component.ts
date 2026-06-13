@@ -201,6 +201,16 @@ export class GalleryLightboxMediaComponent implements OnChanges {
     }
   }
 
+  public seekBy(seconds: number): void {
+    if (!this.video) {
+      return;
+    }
+    const video = this.video.nativeElement;
+    const duration = Number.isFinite(video.duration) ? video.duration : 0;
+    video.currentTime = Math.max(0, Math.min(duration, video.currentTime + seconds));
+    this.onVideoProgress();
+  }
+
   public startLiveVideo(): void {
     if (!this.liveVideo || this.liveVideoClickLocked) {
       return;
@@ -368,4 +378,3 @@ export class GalleryLightboxMediaComponent implements OnChanges {
     }
   }
 }
-

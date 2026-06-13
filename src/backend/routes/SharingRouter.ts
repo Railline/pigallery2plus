@@ -11,12 +11,13 @@ import {Config} from '../../common/config/private/Config';
 export class SharingRouter {
   public static route(app: express.Express): void {
     this.addShareLogin(app);
+    this.addListSharing(app);
+    this.addListOwnSharing(app);
+    this.addListSharingForDir(app);
     this.addGetSharing(app);
     this.addGetSharingKey(app);
     this.addCreateSharing(app);
     this.addUpdateSharing(app);
-    this.addListSharing(app);
-    this.addListSharingForDir(app);
     this.addDeleteSharing(app);
   }
 
@@ -95,6 +96,17 @@ export class SharingRouter {
       AuthenticationMWs.authenticate,
       AuthenticationMWs.authorise(UserRoles.Admin),
       SharingMWs.listSharing,
+      ServerTimingMWs.addServerTiming,
+      RenderingMWs.renderSharingList
+    );
+  }
+
+  private static addListOwnSharing(app: express.Express): void {
+    app.get(
+      [Config.Server.apiPath + '/share/listMine'],
+      AuthenticationMWs.authenticate,
+      AuthenticationMWs.authorise(UserRoles.User),
+      SharingMWs.listOwnSharing,
       ServerTimingMWs.addServerTiming,
       RenderingMWs.renderSharingList
     );

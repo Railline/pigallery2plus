@@ -1267,7 +1267,7 @@ export class ClientVideoConfig {
     } as TAGS,
     description: $localize`Video formats that are supported after transcoding (with the built-in ffmpeg support).`
   })
-  supportedFormatsWithTranscoding: string[] = ['avi', 'mkv', 'mov', 'wmv', 'flv', 'mts', 'm2ts', 'mpg', '3gp', 'm4v', 'mpeg', 'vob', 'divx', 'xvid', 'ts'];
+  supportedFormatsWithTranscoding: string[] = ['avi', 'mkv', 'mov', 'wmv', 'flv', 'mts', 'm2ts', 'mpg', '3gp', 'm4v', 'mpeg', 'vob', 'divx', 'xvid', 'ts', 'asf', 'mxf', 'f4v', 'ogm', 'dv', 'rm', 'rmvb'];
   // Browser-supported video formats
   // Read more: https://www.w3schools.com/html/html5_video.asp
   @ConfigProperty({

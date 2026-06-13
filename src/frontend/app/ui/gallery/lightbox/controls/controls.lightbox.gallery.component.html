@@ -250,18 +250,32 @@
   <div class="controls controls-video row mb-3" *ngIf="activePhoto && activePhoto.gridMedia.isVideo()">
     <div class="col-1">
       <ng-icon [name]="!mediaElement.Paused ? 'ionPauseOutline' :'ionPlayOutline'"
-               (click)="mediaElement.playPause()"></ng-icon>
+               (click)="mediaElement.playPause()"
+               title="Play / pause" i18n-title></ng-icon>
+    </div>
+    <div class="col-1">
+      <ng-icon name="ionPlayBackOutline"
+               (click)="seekVideo(-5)"
+               title="Back 5 seconds, key: left arrow" i18n-title></ng-icon>
+    </div>
+    <div class="col-1">
+      <ng-icon name="ionPlayForwardOutline"
+               (click)="seekVideo(5)"
+               title="Forward 5 seconds, key: right arrow" i18n-title></ng-icon>
     </div>
     <input type="range" [(ngModel)]="mediaElement.VideoProgress"
-           min="0" max="100" step="0.1" class="col video-progress rounded">
+           min="0" max="100" step="0.1" class="col video-progress rounded"
+           title="Video position" i18n-title>
 
     <div class="col-1">
       <ng-icon [name]="mediaElement.Muted ? 'ionVolumeMuteOutline' :'ionVolumeMediumOutline'"
-               (click)="mediaElement.mute()"></ng-icon>
+               (click)="mediaElement.mute()"
+               title="Mute" i18n-title></ng-icon>
     </div>
     <input type="range"
-           [(ngModel)]="mediaElement.VideoVolume" min="0" max="1" step="0.1"
-           value="1" class="col-2 col-md-1 volume rounded">
+           [(ngModel)]="mediaElement.VideoVolume" min="0" max="1" step="0.05"
+           value="1" class="col-3 col-md-2 volume rounded"
+           title="Volume" i18n-title>
   </div>
 
 

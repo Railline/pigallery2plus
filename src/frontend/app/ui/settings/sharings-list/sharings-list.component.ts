@@ -1,4 +1,4 @@
-import {Component, OnInit} from '@angular/core';
+import {Component, Input, OnInit} from '@angular/core';
 import {ResponseSharingDTO} from '../../../../../common/entities/SharingDTO';
 import {SettingsService} from '../settings.service';
 import {ShareService} from '../../gallery/share.service';
@@ -21,6 +21,7 @@ import {NotificationService} from '../../../model/notification.service';
 })
 export class SharingsListComponent implements OnInit {
 
+  @Input() adminMode = true;
   public shares: ResponseSharingDTO[] = [];
   public editingShare: ResponseSharingDTO = null;
   public editQueryText = '';
@@ -148,7 +149,9 @@ export class SharingsListComponent implements OnInit {
 
   private async getSharingList(): Promise<void> {
     try {
-      this.shares = await this.sharingService.getSharingList();
+      this.shares = this.adminMode ?
+        await this.sharingService.getSharingList() :
+        await this.sharingService.getOwnSharingList();
     } catch (err) {
       this.shares = [];
       throw err;

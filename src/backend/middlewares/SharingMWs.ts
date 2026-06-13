@@ -289,6 +289,29 @@ export class SharingMWs {
     }
   }
 
+  public static async listOwnSharing(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    try {
+      if (Config.Sharing.enabled === false) {
+        return next();
+      }
+      req.resultPipe =
+        await ObjectManagers.getInstance().SharingManager.listOwn(req.session.context?.user);
+      return next();
+    } catch (err) {
+      return next(
+        new ErrorDTO(
+          ErrorCodes.GENERAL_ERROR,
+          'Error during listing own shares',
+          err
+        )
+      );
+    }
+  }
+
   public static async listSharingForQuery(
     req: Request,
     res: Response,

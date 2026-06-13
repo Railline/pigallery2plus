@@ -237,13 +237,27 @@ export class ControlsLightboxComponent implements OnDestroy, OnChanges {
 
   @HostListener('window:keydown', ['$event'])
   onKeyPress(event: KeyboardEvent): void {
+    const target = event.target as HTMLElement;
+    if (target && ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(target.tagName)) {
+      return;
+    }
     switch (event.key) {
       case 'ArrowLeft':
+        if (this.isVideoActive()) {
+          this.seekVideo(-5);
+          event.preventDefault();
+          break;
+        }
         if (this.navigation.hasPrev) {
           this.previousPhoto.emit();
         }
         break;
       case 'ArrowRight':
+        if (this.isVideoActive()) {
+          this.seekVideo(5);
+          event.preventDefault();
+          break;
+        }
         if (this.navigation.hasNext) {
           this.nextMediaManuallyTriggered();
         }
@@ -336,6 +350,14 @@ export class ControlsLightboxComponent implements OnDestroy, OnChanges {
 
   resetZoom(): void {
     this.Zoom = 1;
+  }
+
+  public seekVideo(seconds: number): void {
+    if (!this.isVideoActive()) {
+      return;
+    }
+    this.mediaElement.seekBy(seconds);
+    this.showControls();
   }
 
   onResize(): void {
@@ -508,6 +530,10 @@ export class ControlsLightboxComponent implements OnDestroy, OnChanges {
       this.stopSlideShow();
       this.runSlideShow();
     }
+  }
+
+  private isVideoActive(): boolean {
+    return !!this.activePhoto && this.activePhoto.gridMedia.isVideo() && !!this.mediaElement;
   }
 
   private checkZoomAndDrag(): void {

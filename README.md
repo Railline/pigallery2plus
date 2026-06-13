@@ -11,10 +11,10 @@ Recommended image:
 docker pull railline/pigallery2plus:latest
 ```
 
-Versioned releases are published from Git tags:
+Versioned releases are available as Docker tags:
 
 ```sh
-docker pull railline/pigallery2plus:3.6.0-plus.3
+docker pull railline/pigallery2plus:3.6.0-plus.4
 ```
 
 Minimal run example:
@@ -43,20 +43,20 @@ The image follows the upstream PiGallery2 layout:
 - Faster large-gallery browsing with incremental loading improvements for very large archives.
 - Share-link fixes for guest and limited guest browsing.
 - Public random-image URLs that can use a share key and constrained search query.
-- Editable random-link query support in the sharing workflow.
+- Editable random-link query support for admins and link owners.
+- Wider video format support through ffmpeg-backed transcoding, including MKV and other common archive formats.
+- Lightbox video controls with 5 second keyboard seeking and improved volume handling.
 - Admin-only debug overlay controls.
 - Activity audit logging for user actions, logins, share-link use, and admin views.
 - Settings UI access to recent activity logs with filtering by user, IP, action, and time window.
 - Gallery Grabber metadata display support for source site, source URL, preserved filename, creator, and private-gallery markers.
 - Additional backend hardening around share authentication and stale session handling.
-- CI coverage for frontend, backend, Cypress, and multi-platform Docker verification.
 
 ## Security Notes
 
 - Media folders should be mounted read-only unless you explicitly need write access.
 - Share links can be passwordless by design; expose only the folders or searches you intend to share.
 - Random image URLs with a share key are public to anyone who has the URL.
-- Do not commit real configs, logs, database files, cookies, API keys, tokens, or private media into this repository.
 - Put the app behind a reverse proxy with HTTPS when exposing it publicly.
 - Configure trusted proxy settings according to your deployment if you rely on client IP logging or rate controls.
 - Keep the Docker image updated and rotate share keys if a link was exposed too broadly.
@@ -77,8 +77,6 @@ npm run test-frontend
 npm run test-backend
 npm run cypress:run
 ```
-
-Docker release verification is handled by GitHub Actions for Debian Trixie and Alpine variants.
 
 ## License
 

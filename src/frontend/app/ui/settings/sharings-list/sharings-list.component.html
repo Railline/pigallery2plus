@@ -1,7 +1,8 @@
 <ng-container *ngIf="Enabled">
   <div class="row mt-2">
     <div class="col-auto">
-      <h5 i18n>Active shares</h5>
+      <h5 *ngIf="adminMode" i18n>Active shares</h5>
+      <h5 *ngIf="!adminMode" i18n>My random links</h5>
     </div>
     <div class="col">
       <hr/>
@@ -13,7 +14,7 @@
       <tr>
         <th i18n>Key</th>
         <th i18n>Sharing</th>
-        <th i18n>Creator</th>
+        <th *ngIf="adminMode" i18n>Creator</th>
         <th i18n>Expires</th>
         <th></th>
       </tr>
@@ -23,7 +24,7 @@
         <tr>
           <td class="ellipsisContainer"><a [href]="sharingService.getUrl(share)" class="ellipsisText">{{share.sharingKey}}</a></td>
           <td>{{share.searchQuery | searchQuery}}</td>
-          <td>{{share.creator.name}}</td>
+          <td *ngIf="adminMode">{{share.creator.name}}</td>
           <td>{{share.expires | date}}</td>
           <td class="share-actions">
             <button (click)="startEdit(share)" class="btn btn-secondary me-2" type="button">
@@ -35,7 +36,7 @@
           </td>
         </tr>
         <tr *ngIf="editingShare?.id === share.id">
-          <td colspan="5" class="share-editor">
+          <td [attr.colspan]="adminMode ? 5 : 4" class="share-editor">
             <div class="row g-2">
               <div class="col-12">
                 <label class="form-label" for="share-query-edit" i18n>Search query</label>

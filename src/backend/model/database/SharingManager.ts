@@ -55,6 +55,18 @@ export class SharingManager {
       .getMany();
   }
 
+  async listOwn(user: UserDTO): Promise<SharingEntity[]> {
+    await SharingManager.removeExpiredLink();
+    const creator = await SharingManager.resolveCreator(user);
+    const connection = await SQLConnection.getConnection();
+    return await connection
+      .getRepository(SharingEntity)
+      .createQueryBuilder('share')
+      .leftJoinAndSelect('share.creator', 'creator')
+      .where('share.creator = :user', {user: creator.id})
+      .getMany();
+  }
+
 
   async listAllForQuery(query: SearchQueryDTO, user?: UserDTO): Promise<SharingEntity[]> {
     await SharingManager.removeExpiredLink();

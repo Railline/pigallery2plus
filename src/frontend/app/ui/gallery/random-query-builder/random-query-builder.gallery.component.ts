@@ -23,6 +23,7 @@ import { GallerySearchQueryBuilderComponent } from '../search/query-builder/quer
 import {SearchQueryUtils} from '../../../../../common/SearchQueryUtils';
 import {ShareService} from '../share.service';
 import {Utils} from '../../../../../common/Utils';
+import {SharingsListComponent} from '../../settings/sharings-list/sharings-list.component';
 
 @Component({
     selector: 'app-gallery-random-query-builder',
@@ -33,6 +34,7 @@ import {Utils} from '../../../../../common/Utils';
         FormsModule,
         ClipboardModule,
         GallerySearchQueryBuilderComponent,
+        SharingsListComponent,
     ]
 })
 export class RandomQueryBuilderGalleryComponent implements OnInit, OnDestroy {

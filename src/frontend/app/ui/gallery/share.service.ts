@@ -197,6 +197,13 @@ export class ShareService {
     return this.networkService.getJson('/share/listAll');
   }
 
+  public getOwnSharingList(): Promise<ResponseSharingDTO[]> {
+    if (!Config.Sharing.enabled) {
+      return Promise.resolve([]);
+    }
+    return this.networkService.getJson('/share/listMine');
+  }
+
   public deleteSharing(sharing: ResponseSharingDTO): Promise<void> {
     return this.networkService.deleteJson('/share/' + encodeURIComponent(sharing.sharingKey));
   }
