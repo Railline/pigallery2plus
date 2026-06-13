@@ -1,23 +1,16 @@
 describe('Faces', () => {
   beforeEach(() => {
-    cy.visit('/');
-    cy.get('.card-body');
-    cy.get('.col-sm-12').contains('Login');
-    /* ==== Generated with Cypress Studio ==== */
-    cy.get('#username').type('admin');
-    cy.get('#password').clear();
-    cy.get('#password').type('admin');
-    cy.intercept({
-      method: 'GET',
-      url: '**/pgapi/gallery/content*',
-    }).as('getContent');
+    cy.request('POST', '/pgapi/user/login', {
+      loginCredential: {
+        username: 'admin',
+        password: 'admin',
+        rememberMe: false,
+      },
+    });
     cy.intercept({
       method: 'GET',
       url: '**/pgapi/person*',
     }).as('getPerson');
-    cy.get('.col-sm-12 > .btn').click();
-    cy.get('.mb-0 > :nth-child(1) > .nav-link').contains('Gallery');
-    cy.wait('@getContent', {timeout: 10000});
     cy.request('/pgapi/gallery/content/?mo=0&mt=120&msm=20&msa=1');
     cy.request('/pgapi/person')
       .its('body.result')
