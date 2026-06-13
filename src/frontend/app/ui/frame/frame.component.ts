@@ -126,6 +126,55 @@ export class FrameComponent {
     return this.router.url.startsWith(url);
   }
 
+  isReloadImageLink(link: { url?: string }): boolean {
+    return link.url === '#reload-image';
+  }
+
+  reloadBackgroundImage(event?: Event): void {
+    event?.preventDefault();
+    const timestamp = Date.now().toString();
+    this.reloadStyleSheets(timestamp);
+    this.reloadBackgroundForElement(document.documentElement, timestamp);
+    this.reloadBackgroundForElement(document.body, timestamp);
+    window.dispatchEvent(new CustomEvent('pigallery2plus:reload-background-image', {
+      detail: {timestamp}
+    }));
+  }
+
+  private reloadStyleSheets(timestamp: string): void {
+    document.querySelectorAll<HTMLLinkElement>('link[rel~="stylesheet"]').forEach((link) => {
+      const href = link.getAttribute('href');
+      if (!href) {
+        return;
+      }
+      link.href = this.cacheBustUrl(href, timestamp);
+    });
+  }
+
+  private reloadBackgroundForElement(element: HTMLElement, timestamp: string): void {
+    const backgroundImage = window.getComputedStyle(element).backgroundImage;
+    if (!backgroundImage || backgroundImage === 'none') {
+      return;
+    }
+    const refreshedBackgroundImage = backgroundImage.replace(/url\((['"]?)(.*?)\1\)/g, (_match, _quote, url) => {
+      return `url("${this.cacheBustUrl(url, timestamp)}")`;
+    });
+    if (refreshedBackgroundImage !== backgroundImage) {
+      element.style.backgroundImage = refreshedBackgroundImage;
+    }
+  }
+
+  private cacheBustUrl(rawUrl: string, timestamp: string): string {
+    try {
+      const url = new URL(rawUrl, window.location.href);
+      url.searchParams.set('pgReloadImage', timestamp);
+      return url.toString();
+    } catch (e) {
+      const separator = rawUrl.includes('?') ? '&' : '?';
+      return `${rawUrl}${separator}pgReloadImage=${encodeURIComponent(timestamp)}`;
+    }
+  }
+
   isSearchActive(searchQuery: SearchQueryDTO): boolean {
     if (!this.router.url.startsWith('/search')) {
       return false;

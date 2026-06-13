@@ -104,6 +104,7 @@ import {
   ionPricetagOutline,
   ionPulseOutline,
   ionRefresh,
+  ionRefreshOutline,
   ionReload,
   ionRemoveOutline,
   ionResizeOutline,
@@ -208,7 +209,7 @@ bootstrapApplication(AppComponent, {
         ionTimeOutline, ionCheckmarkOutline, ionPulseOutline, ionResizeOutline,
         ionCloudOutline, ionChatboxOutline, ionServerOutline, ionFileTrayFullOutline, ionBrushOutline,
         ionBrowsersOutline, ionUnlinkOutline, ionSquareOutline, ionGridOutline,
-        ionAppsOutline, ionOpenOutline, ionRefresh, ionExtensionPuzzleOutline, ionList, ionPencil, ionReload,
+        ionAppsOutline, ionOpenOutline, ionRefresh, ionRefreshOutline, ionExtensionPuzzleOutline, ionList, ionPencil, ionReload,
         ionCaretForward, ionCaretDown,
         ionFingerPrint, ionCloudUploadOutline
       }), ClipboardModule, TooltipModule.forRoot(), ToastrModule.forRoot(),
