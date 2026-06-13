@@ -13,6 +13,7 @@ export class VideoProcessing {
       1,
       (input): Promise<void> => VideoConverterWorker.convert(input)
     );
+  private static readonly inProgressConversions = new Map<string, Promise<void>>();
 
   public static generateConvertedFilePath(videoPath: string): string {
     return path.join(
@@ -65,6 +66,20 @@ export class VideoProcessing {
   }
 
   public static async convertVideo(videoPath: string): Promise<void> {
+    const inProgress = this.inProgressConversions.get(videoPath);
+    if (inProgress) {
+      return inProgress;
+    }
+
+    const conversion = this.convertVideoInternal(videoPath)
+      .finally((): void => {
+        this.inProgressConversions.delete(videoPath);
+      });
+    this.inProgressConversions.set(videoPath, conversion);
+    return conversion;
+  }
+
+  private static async convertVideoInternal(videoPath: string): Promise<void> {
     const outPath = this.generateConvertedFilePath(videoPath);
 
     try {
@@ -130,4 +145,3 @@ export class VideoProcessing {
     );
   }
 }
-

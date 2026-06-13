@@ -30,6 +30,7 @@ export class VideoConverterWorker {
   public static async convert(input: VideoConverterInput): Promise<void> {
     const origPath = input.output.path;
     input.output.path = origPath + '.part';
+    await fsp.unlink(input.output.path).catch((): void => undefined);
     await this._convert(input);
     await fsp.rename(input.output.path, origPath);
   }
@@ -100,4 +101,3 @@ export class VideoConverterWorker {
     });
   }
 }
-

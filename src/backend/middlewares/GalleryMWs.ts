@@ -366,20 +366,47 @@ export class GalleryMWs {
     res: Response,
     next: NextFunction
   ): Promise<void> {
+    if (!req.resultPipe) {
+      return next();
+    }
+
+    const fullMediaPath = req.resultPipe as string;
+    const convertedVideo =
+      VideoProcessing.generateConvertedFilePath(fullMediaPath);
+
     try {
-      if (!req.resultPipe) {
-        return next();
-      }
-      const fullMediaPath = req.resultPipe as string;
-
-      const convertedVideo =
-        VideoProcessing.generateConvertedFilePath(fullMediaPath);
-
-      // check if transcoded video exist
       await fsp.access(convertedVideo);
       req.resultPipe = convertedVideo;
-      // eslint-disable-next-line no-empty
+      return next();
     } catch (e) {
+      // No converted file yet. Browser-native formats can still be served as-is.
+    }
+
+    const extension = path.extname(fullMediaPath).slice(1).toLowerCase();
+    const browserSupported = Config.Media.Video.supportedFormats
+      .map((format): string => format.toLowerCase())
+      .includes(extension);
+
+    if (browserSupported) {
+      return next();
+    }
+
+    try {
+      Logger.info(
+        '[GalleryMWs]',
+        'Transcoding video on demand for browser playback:',
+        req.params['mediaPath']
+      );
+      await VideoProcessing.convertVideo(fullMediaPath);
+      await fsp.access(convertedVideo);
+      req.resultPipe = convertedVideo;
+    } catch (e) {
+      Logger.warn(
+        '[GalleryMWs]',
+        'Could not transcode video on demand, falling back to original:',
+        req.params['mediaPath'],
+        e as Error
+      );
     }
 
     return next();
