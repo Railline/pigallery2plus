@@ -25,9 +25,9 @@
                  [queryParams]="queryService.getParams()" [class.active]="isLinkActive('/gallery')" i18n>Gallery</a>
             </li>
             <li class="nav-item" *ngIf="link.type === NavigationLinkTypes.url && isCustomLinksAvailable() && isReloadImageLink(link)">
-              <button type="button" class="nav-link btn btn-link" (click)="reloadBackgroundImage($event)">
+              <a class="nav-link" [href]="link.url" (click)="reloadBackgroundImage($event)">
                 {{ link.name }}
-              </button>
+              </a>
             </li>
             <li class="nav-item" *ngIf="link.type === NavigationLinkTypes.url && isCustomLinksAvailable() && !isReloadImageLink(link)">
               <a class="nav-link" [href]="link.url" [class.active]="isLinkActive(link.url)">{{ link.name }}</a>
@@ -140,10 +140,10 @@
                       </a>
                     </li>
                     <li class="nav-item d-md-none" *ngIf="link.type === NavigationLinkTypes.url && isCustomLinksAvailable() && isReloadImageLink(link)">
-                      <button type="button" class="dropdown-item btn btn-link" (click)="reloadBackgroundImage($event)">
+                      <a class="dropdown-item" [href]="link.url" (click)="reloadBackgroundImage($event)">
                         <ng-icon name="ionRefreshOutline"></ng-icon>
                         <span>{{ link.name }}</span>
-                      </button>
+                      </a>
                     </li>
                     <li class="nav-item d-md-none" *ngIf="link.type === NavigationLinkTypes.url  && isCustomLinksAvailable() && !isReloadImageLink(link)">
                       <a class="dropdown-item" [href]="link.url" [class.active]="isLinkActive(link.url)">

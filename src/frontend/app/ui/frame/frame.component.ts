@@ -133,12 +133,39 @@ export class FrameComponent {
   reloadBackgroundImage(event?: Event): void {
     event?.preventDefault();
     const timestamp = Date.now().toString();
-    this.reloadStyleSheets(timestamp);
+    if (this.reloadConfiguredBackgroundImage(timestamp)) {
+      return;
+    }
     this.reloadBackgroundForElement(document.documentElement, timestamp);
     this.reloadBackgroundForElement(document.body, timestamp);
+    this.reloadStyleSheets(timestamp);
     window.dispatchEvent(new CustomEvent('pigallery2plus:reload-background-image', {
       detail: {timestamp}
     }));
+  }
+
+  private reloadConfiguredBackgroundImage(timestamp: string): boolean {
+    const sessionStorageKey = 'pg-bg-url';
+    const rawUrl = window.sessionStorage.getItem(sessionStorageKey) ||
+      this.extractCssUrl(document.body.style.getPropertyValue('--bg-url')) ||
+      this.extractCssUrl(window.getComputedStyle(document.body).getPropertyValue('--bg-url'));
+    if (!rawUrl) {
+      return false;
+    }
+
+    const nextUrl = this.cacheBustUrl(rawUrl, timestamp);
+    const image = new Image();
+    image.decoding = 'async';
+    image.loading = 'eager';
+    image.onload = () => {
+      window.sessionStorage.setItem(sessionStorageKey, nextUrl);
+      document.body.style.setProperty('--bg-url', `url("${nextUrl}")`);
+      window.dispatchEvent(new CustomEvent('pigallery2plus:reload-background-image', {
+        detail: {timestamp, url: nextUrl}
+      }));
+    };
+    image.src = nextUrl;
+    return true;
   }
 
   private reloadStyleSheets(timestamp: string): void {
@@ -164,14 +191,23 @@ export class FrameComponent {
     }
   }
 
+  private extractCssUrl(cssValue: string | null): string | null {
+    if (!cssValue) {
+      return null;
+    }
+    const match = cssValue.match(/url\((['"]?)(.*?)\1\)/);
+    return match?.[2] || null;
+  }
+
   private cacheBustUrl(rawUrl: string, timestamp: string): string {
     try {
       const url = new URL(rawUrl, window.location.href);
-      url.searchParams.set('pgReloadImage', timestamp);
+      url.searchParams.set('v', timestamp);
+      url.searchParams.delete('pgReloadImage');
       return url.toString();
     } catch (e) {
       const separator = rawUrl.includes('?') ? '&' : '?';
-      return `${rawUrl}${separator}pgReloadImage=${encodeURIComponent(timestamp)}`;
+      return `${rawUrl}${separator}v=${encodeURIComponent(timestamp)}`;
     }
   }
 
