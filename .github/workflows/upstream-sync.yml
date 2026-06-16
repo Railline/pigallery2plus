@@ -1,4 +1,4 @@
-name: upstream-sync
+name: Upstream Sync
 
 on:
   workflow_dispatch:
@@ -58,43 +58,48 @@ jobs:
           fi
 
       - name: Open or update upstream sync PR
-        if: steps.merge.outputs.changed == 'true' && steps.merge.outputs.conflict != 'true'
+        if: ${{ steps.merge.outputs.changed == 'true' && steps.merge.outputs.conflict != 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          BODY="Automated upstream sync from bpatrik/pigallery2@${{ steps.merge.outputs.upstream_sha }}.
+          cat > /tmp/upstream-sync-pr.md <<'BODY'
+          Automated upstream sync from bpatrik/pigallery2.
 
-Review carefully before merging because PiGallery2Plus carries local performance, metadata, random-link, audit-log, video-player, and deployment changes."
+          Review carefully before merging because PiGallery2Plus carries local performance, metadata, random-link, audit-log, video-player, and deployment changes.
+          BODY
+          printf '\nUpstream commit: %s\n' "${{ steps.merge.outputs.upstream_sha }}" >> /tmp/upstream-sync-pr.md
           gh pr create \
             --repo "${GITHUB_REPOSITORY}" \
             --base main \
             --head upstream-sync/bpatrik-master \
             --title "Sync upstream bpatrik/pigallery2" \
-            --body "${BODY}" || \
+            --body-file /tmp/upstream-sync-pr.md || \
           gh pr edit upstream-sync/bpatrik-master \
             --repo "${GITHUB_REPOSITORY}" \
             --title "Sync upstream bpatrik/pigallery2" \
-            --body "${BODY}"
+            --body-file /tmp/upstream-sync-pr.md
 
       - name: Report upstream sync conflict
-        if: steps.merge.outputs.changed == 'true' && steps.merge.outputs.conflict == 'true'
+        if: ${{ steps.merge.outputs.changed == 'true' && steps.merge.outputs.conflict == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TITLE="Upstream sync conflict with bpatrik/pigallery2"
-          BODY="Automated upstream sync could not merge bpatrik/pigallery2@${{ steps.merge.outputs.upstream_sha }} into main.
+          cat > /tmp/upstream-sync-conflict.md <<'BODY'
+          Automated upstream sync could not merge bpatrik/pigallery2 into main.
 
-Manual conflict resolution is required. Start locally with:
+          Manual conflict resolution is required. Start locally with:
 
-\`\`\`sh
-git fetch origin main
-git fetch https://github.com/bpatrik/pigallery2.git master
-git checkout -B upstream-sync/manual origin/main
-git merge FETCH_HEAD
-\`\`\`"
+          ```sh
+          git fetch origin main
+          git fetch https://github.com/bpatrik/pigallery2.git master
+          git checkout -B upstream-sync/manual origin/main
+          git merge FETCH_HEAD
+          ```
+          BODY
+          printf '\nUpstream commit: %s\n' "${{ steps.merge.outputs.upstream_sha }}" >> /tmp/upstream-sync-conflict.md
           gh issue create \
             --repo "${GITHUB_REPOSITORY}" \
-            --title "${TITLE}" \
-            --body "${BODY}"
+            --title "Upstream sync conflict with bpatrik/pigallery2" \
+            --body-file /tmp/upstream-sync-conflict.md
