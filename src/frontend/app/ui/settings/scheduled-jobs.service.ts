@@ -17,6 +17,8 @@ export class ScheduledJobsService {
   public availableMessengers: BehaviorSubject<string[]>;
   public jobStartingStopping: { [key: string]: boolean } = {};
   private subscribers = 0;
+  private progressEvents: EventSource = null;
+  private fallbackPolling = false;
 
   constructor(
     private networkService: NetworkService,
@@ -117,36 +119,42 @@ export class ScheduledJobsService {
   }
 
   protected async loadProgress(): Promise<void> {
-    const prevPrg = this.progress.value;
-    this.progress.next(
-      await this.networkService.getJson<{ [key: string]: JobProgressDTO }>(
+    this.applyProgress(
+      await this.networkService.getJson<{ [key: string]: OnTimerJobProgressDTO }>(
         '/admin/jobs/scheduled/progress'
       )
     );
+  }
+
+  private applyProgress(nextProgress: Record<string, OnTimerJobProgressDTO>): void {
+    const prevPrg = this.progress.value;
+    this.progress.next(nextProgress || {});
     for (const prg of Object.keys(prevPrg)) {
+      const prev = prevPrg[prg];
+      const next = this.progress.value[prg];
       if (
         // eslint-disable-next-line no-prototype-builtins
         !(this.progress.value).hasOwnProperty(prg) ||
         // state changed from running to finished
-        ((prevPrg[prg].state === JobProgressStates.running ||
-            prevPrg[prg].state === JobProgressStates.cancelling) &&
+        ((prev.state === JobProgressStates.running ||
+            prev.state === JobProgressStates.cancelling) &&
           !(
-            this.progress.value[prg].state === JobProgressStates.running ||
-            this.progress.value[prg].state === JobProgressStates.cancelling
+            next?.state === JobProgressStates.running ||
+            next?.state === JobProgressStates.cancelling
           ))
       ) {
         this.onJobFinish.emit(prg);
-        if (this.progress.value[prg].state === JobProgressStates.failed) {
+        if (next?.state === JobProgressStates.failed) {
           this.notification.warning(
             $localize`Job failed` +
             ': ' +
-            this.backendTextService.getJobName(prevPrg[prg].jobName)
+            this.backendTextService.getJobName(prev.jobName)
           );
         } else {
           this.notification.success(
             $localize`Job finished` +
             ': ' +
-            this.backendTextService.getJobName(prevPrg[prg].jobName)
+            this.backendTextService.getJobName(prev.jobName)
           );
         }
       }
@@ -160,7 +168,7 @@ export class ScheduledJobsService {
   }
 
   protected getProgressPeriodically(): void {
-    if (this.timer != null || this.subscribers === 0) {
+    if (this.timer != null || this.subscribers === 0 || !this.fallbackPolling) {
       return;
     }
     let repeatTime = 1000;
@@ -172,6 +180,41 @@ export class ScheduledJobsService {
       this.getProgressPeriodically();
     }, repeatTime);
     this.loadProgress().catch(console.error);
+  }
+
+  private connectProgressEvents(): void {
+    if (this.progressEvents !== null || this.subscribers === 0) {
+      return;
+    }
+    if (typeof EventSource === 'undefined') {
+      this.fallbackPolling = true;
+      this.getProgressPeriodically();
+      return;
+    }
+
+    this.fallbackPolling = false;
+    this.progressEvents = new EventSource(
+      this.networkService.apiBaseUrl + '/admin/jobs/scheduled/progress/events'
+    );
+    this.progressEvents.addEventListener('progress', (event: MessageEvent<string>) => {
+      try {
+        this.applyProgress(JSON.parse(event.data));
+      } catch (err) {
+        console.error(err);
+      }
+    });
+    this.progressEvents.onerror = (): void => {
+      this.disconnectProgressEvents();
+      this.fallbackPolling = true;
+      this.getProgressPeriodically();
+    };
+  }
+
+  private disconnectProgressEvents(): void {
+    if (this.progressEvents !== null) {
+      this.progressEvents.close();
+      this.progressEvents = null;
+    }
   }
 
   private addDummyProgress(jobName: string, config: any): void {
@@ -196,10 +239,20 @@ export class ScheduledJobsService {
 
   private incSubscribers(): void {
     this.subscribers++;
-    this.getProgressPeriodically();
+    this.connectProgressEvents();
+    this.loadProgress().catch(console.error);
   }
 
   private decSubscribers(): void {
     this.subscribers--;
+    if (this.subscribers <= 0) {
+      this.subscribers = 0;
+      this.disconnectProgressEvents();
+      this.fallbackPolling = false;
+      if (this.timer !== null) {
+        window.clearTimeout(this.timer);
+        this.timer = null;
+      }
+    }
   }
 }

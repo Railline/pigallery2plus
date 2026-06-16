@@ -5,7 +5,6 @@ import {Config} from '../../../common/config/private/Config';
 import {ThumbnailSourceType} from '../fileaccess/PhotoWorker';
 import * as path from 'path';
 import {Utils} from '../../../common/Utils';
-import {QueryParams} from '../../../common/QueryParams';
 import {DynamicConfig} from '../../../common/entities/DynamicConfig';
 
 export interface MediaDTOWithThPath extends MediaDTO {
@@ -28,6 +27,22 @@ export abstract class Messenger<C extends Record<string, unknown> = Record<strin
     );
   }
 
+  private getDirectMediaUrl(m: MediaDTO): string {
+    const relativePath = encodeURI(
+      Utils.concatUrls(m.directory.path, m.directory.name, m.name)
+    )
+      .replace(new RegExp('#', 'g'), '%23')
+      .replace(new RegExp('\\$', 'g'), '%24')
+      .replace(new RegExp('\\?', 'g'), '%3F');
+
+    return Utils.concatUrls(
+      Config.Server.publicUrl,
+      Config.Server.apiPath,
+      '/gallery/content/',
+      relativePath
+    );
+  }
+
 
   public async send(config: C, input: string | MediaDTO[] | unknown) {
     if (Array.isArray(input) && input.length > 0
@@ -37,8 +52,7 @@ export abstract class Messenger<C extends Record<string, unknown> = Record<strin
       const media = input as MediaDTOWithThPath[];
       for (let i = 0; i < media.length; ++i) {
         media[i].thumbnailPath = await this.getThumbnail(media[i]);
-        media[i].thumbnailUrl = Utils.concatUrls(Config.Server.publicUrl, '/gallery/', encodeURIComponent(path.join(media[i].directory.path, media[i].directory.name))) +
-          '?' + QueryParams.gallery.photo + '=' + encodeURIComponent(media[i].name);
+        media[i].thumbnailUrl = this.getDirectMediaUrl(media[i]);
       }
       return await this.sendMedia(config, media);
     }

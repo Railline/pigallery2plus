@@ -287,4 +287,55 @@ export class AdminMWs {
       );
     }
   }
+
+  public static streamJobProgresses(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): void {
+    try {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache, no-transform');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no');
+      if (typeof (res as Response & { flushHeaders?: () => void }).flushHeaders === 'function') {
+        (res as Response & { flushHeaders: () => void }).flushHeaders();
+      }
+
+      const sendProgress = (): void => {
+        try {
+          res.write(
+            'event: progress\n' +
+            'data: ' + JSON.stringify(ObjectManagers.getInstance().JobManager.getProgresses()) +
+            '\n\n'
+          );
+        } catch (err) {
+          clearInterval(interval);
+        }
+      };
+
+      const interval = setInterval(sendProgress, 1000);
+      const cleanup = (): void => clearInterval(interval);
+      req.on('close', cleanup);
+      res.on('close', cleanup);
+      sendProgress();
+    } catch (err) {
+      if (err instanceof Error) {
+        return next(
+          new ErrorDTO(
+            ErrorCodes.JOB_ERROR,
+            'Job event stream error: ' + err.toString(),
+            err
+          )
+        );
+      }
+      return next(
+        new ErrorDTO(
+          ErrorCodes.JOB_ERROR,
+          'Job event stream error: ' + JSON.stringify(err, null, '  '),
+          err
+        )
+      );
+    }
+  }
 }

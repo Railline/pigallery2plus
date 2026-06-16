@@ -1,6 +1,21 @@
 .progress {
   padding: 0;
   line-height: 1rem;
+  min-height: 1rem;
+  overflow: hidden;
+}
+
+.progress-bar {
+  align-items: center;
+  display: flex !important;
+  font-size: .7rem;
+  justify-content: center;
+  min-width: 0;
+  overflow: hidden;
+  padding-left: .25rem;
+  padding-right: .25rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .progress-row {
@@ -17,7 +32,7 @@
 }
 
 .detail-progress-row .progress {
-  height: .75rem;
+  min-height: 1rem;
 }
 
 .detail-label,

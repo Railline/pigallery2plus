@@ -68,6 +68,12 @@ export class AdminRouter {
         AdminMWs.getJobProgresses,
         RenderingMWs.renderResult
     );
+    app.get(
+        Config.Server.apiPath + '/admin/jobs/scheduled/progress/events',
+        AuthenticationMWs.authenticate,
+        AuthenticationMWs.authorise(UserRoles.Admin),
+        AdminMWs.streamJobProgresses
+    );
     app.post(
         Config.Server.apiPath + '/admin/jobs/scheduled/:id/start',
         AuthenticationMWs.authenticate,
