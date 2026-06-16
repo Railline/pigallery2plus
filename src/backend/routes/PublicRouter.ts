@@ -32,6 +32,13 @@ declare global {
 
 export class PublicRouter {
   public static route(app: Express): void {
+    const encodeMediaPath = (mediaPath: string): string => {
+      return encodeURI(mediaPath)
+        .replace(new RegExp('#', 'g'), '%23')
+        .replace(new RegExp('\\$', 'g'), '%24')
+        .replace(new RegExp('\\?', 'g'), '%3F');
+    };
+
     const setLocale = (req: Request, res: Response, next: NextFunction) => {
       let selectedLocale = req.locale;
       if (req.cookies && req.cookies[CookieNames.lang]) {
@@ -107,6 +114,23 @@ export class PublicRouter {
 
     app.get('/heartbeat', (req: Request, res: Response) => {
       res.sendStatus(200);
+    });
+
+    app.get('/gallery/:directory(*)', (req: Request, res: Response, next: NextFunction) => {
+      const photo = req.query[QueryParams.gallery.photo];
+      if (typeof photo !== 'string' || photo.length === 0) {
+        return next();
+      }
+      const directory = typeof req.params.directory === 'string' ?
+        decodeURIComponent(req.params.directory) : '';
+      const mediaPath = Utils.concatUrls(directory, photo);
+      return res.redirect(
+        Utils.concatUrls(
+          Config.Server.apiPath,
+          '/gallery/content/',
+          encodeMediaPath(mediaPath)
+        )
+      );
     });
 
     app.get('/manifest.json', (req: Request, res: Response) => {
