@@ -27,9 +27,9 @@ export abstract class Messenger<C extends Record<string, unknown> = Record<strin
     );
   }
 
-  private getDirectMediaUrl(m: MediaDTO): string {
-    const relativePath = encodeURI(
-      Utils.concatUrls(m.directory.path, m.directory.name, m.name)
+  private getGalleryMediaUrl(m: MediaDTO): string {
+    const galleryPath = encodeURI(
+      Utils.concatUrls('/gallery/', m.directory.path, m.directory.name)
     )
       .replace(new RegExp('#', 'g'), '%23')
       .replace(new RegExp('\\$', 'g'), '%24')
@@ -37,10 +37,8 @@ export abstract class Messenger<C extends Record<string, unknown> = Record<strin
 
     return Utils.concatUrls(
       Config.Server.publicUrl,
-      Config.Server.apiPath,
-      '/gallery/content/',
-      relativePath
-    );
+      galleryPath
+    ) + '?p=' + encodeURIComponent(m.name);
   }
 
 
@@ -52,7 +50,7 @@ export abstract class Messenger<C extends Record<string, unknown> = Record<strin
       const media = input as MediaDTOWithThPath[];
       for (let i = 0; i < media.length; ++i) {
         media[i].thumbnailPath = await this.getThumbnail(media[i]);
-        media[i].thumbnailUrl = this.getDirectMediaUrl(media[i]);
+        media[i].thumbnailUrl = this.getGalleryMediaUrl(media[i]);
       }
       return await this.sendMedia(config, media);
     }
