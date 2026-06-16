@@ -123,6 +123,9 @@ export class PublicRouter {
       }
       const directory = typeof req.params.directory === 'string' ?
         decodeURIComponent(req.params.directory) : '';
+      if (directory.length === 0) {
+        return next();
+      }
       const mediaPath = Utils.concatUrls(directory, photo);
       return res.redirect(
         Utils.concatUrls(
