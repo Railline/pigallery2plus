@@ -131,6 +131,10 @@ export class VideoRendererFactory {
 }
 
 export class ImageRendererFactory {
+  private static readonly maxInputPixels = Math.max(
+    1,
+    Number(process.env.PIGALLERY_SHARP_LIMIT_INPUT_PIXELS || 8000 * 8000)
+  );
 
   @ExtensionDecorator(e => e.gallery.ImageRenderer.render)
   public static async render(input: MediaRendererInput | SvgRendererInput, dryRun = false): Promise<void> {
@@ -145,6 +149,7 @@ export class ImageRendererFactory {
       );
       image = sharp((input as MediaRendererInput).mediaPath, {
         failOnError: false,
+        limitInputPixels: ImageRendererFactory.maxInputPixels,
         animated: (input as MediaRendererInput).animate, ...((input as MediaRendererInput).sharpOptions || {})
       });
     } else {
