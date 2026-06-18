@@ -15,6 +15,9 @@ import {SecurityMWs} from '../middlewares/SecurityMWs';
 import {QueryParams} from '../../common/QueryParams';
 import {MailMediaLink} from '../model/messenger/MailMediaLink';
 import {PhotoProcessing} from '../model/fileaccess/fileprocessing/PhotoProcessing';
+import {ObjectManagers} from '../model/ObjectManagers';
+import {SessionContext} from '../model/SessionContext';
+import {MediaDTO} from '../../common/entities/MediaDTO';
 
 export class GalleryRouter {
   public static route(app: Express): void {
@@ -70,6 +73,8 @@ export class GalleryRouter {
         const galleryUrl = this.galleryUrl(directoryPath, fileName);
         const directoryUrl = this.galleryUrl(directoryPath);
         const title = this.escapeHtml(fileName);
+        const mediaEntry = await this.getSignedMediaEntry(mediaPath);
+        const infoPanel = this.renderSignedMailInfoPanel(mediaEntry, fileName, isPhoto);
         const mediaTag = isVideo ?
           `<video class="media" src="${this.escapeHtml(mediaUrl)}" controls autoplay playsinline></video>` :
           `<img class="media" src="${this.escapeHtml(mediaUrl)}" alt="${title}">`;
@@ -89,9 +94,27 @@ export class GalleryRouter {
     .title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;color:#d9e2ef}
     a{color:#f5f7fb;text-decoration:none}
     .button{display:inline-flex;align-items:center;height:32px;padding:0 10px;border-radius:6px;background:#263143;border:1px solid #3a4658;font-size:13px}
-    .stage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center}
-    .media{max-width:100vw;max-height:calc(100vh - 48px);object-fit:contain}
-    video.media{width:100vw;height:calc(100vh - 48px);background:#000}
+    .viewer{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 360px;background:#05070a}
+    .stage{min-width:0;min-height:0;display:flex;align-items:center;justify-content:center}
+    .media{max-width:100%;max-height:calc(100vh - 48px);object-fit:contain}
+    video.media{width:100%;height:calc(100vh - 48px);background:#000}
+    .info{overflow:auto;border-left:1px solid #232a36;background:#151922;color:#d9e2ef}
+    .info-header{display:flex;align-items:center;min-height:48px;padding:0 16px;border-bottom:1px solid #2d3544}
+    .info-header h2{margin:0;font-size:18px;font-weight:500}
+    .info-row{display:grid;grid-template-columns:34px minmax(0,1fr);gap:8px;padding:11px 16px;border-bottom:1px solid rgba(255,255,255,.06)}
+    .info-icon{font-size:20px;line-height:24px;color:#9fb4d1;text-align:center}
+    .details-main{font-size:17px;color:#f5f7fb;overflow-wrap:anywhere}
+    .details-sub{margin-top:3px;color:#9ba8bb;font-size:13px;line-height:1.45;overflow-wrap:anywhere}
+    .details-sub a{color:#b8d7ff;text-decoration:underline;text-decoration-thickness:1px}
+    .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:3px}
+    .chip{display:inline-flex;align-items:center;max-width:100%;padding:3px 7px;border-radius:5px;background:#253044;color:#dce8f8;font-size:12px;overflow-wrap:anywhere}
+    @media (max-width:900px){
+      body{overflow:auto}
+      .viewer{display:flex;flex-direction:column;overflow:auto}
+      .stage{height:calc(100vh - 48px);flex:0 0 auto}
+      .media{max-height:calc(100vh - 48px)}
+      .info{border-left:0;border-top:1px solid #232a36;overflow:visible}
+    }
   </style>
 </head>
 <body>
@@ -100,7 +123,10 @@ export class GalleryRouter {
     <div class="title">${title}</div>
     <a class="button" href="${this.escapeHtml(galleryUrl)}">PiGallery</a>
   </div>
-  <div class="stage">${mediaTag}</div>
+  <div class="viewer">
+    <div class="stage">${mediaTag}</div>
+    ${infoPanel}
+  </div>
 </body>
 </html>`);
       }
@@ -212,6 +238,105 @@ export class GalleryRouter {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+  private static async getSignedMediaEntry(mediaPath: string): Promise<MediaDTO | null> {
+    try {
+      return await ObjectManagers.getInstance().GalleryManager.getMedia({} as SessionContext, mediaPath) as unknown as MediaDTO;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  private static renderSignedMailInfoPanel(media: MediaDTO | null, fallbackName: string, isPhoto: boolean): string {
+    const metadata = media?.metadata || null;
+    const name = media?.name || fallbackName;
+    const rows: string[] = [];
+    const size = metadata?.size;
+    const fileFacts: string[] = [];
+    if (size?.width && size?.height) {
+      fileFacts.push(`${size.width} x ${size.height}`);
+      if (isPhoto) {
+        fileFacts.push(`${((size.width * size.height) / 1000000).toFixed(2)}MP`);
+      }
+    }
+    if (metadata?.fileSize) {
+      fileFacts.push(this.formatBytes(metadata.fileSize));
+    }
+    rows.push(this.infoRow('▣', this.escapeHtml(name), fileFacts.map(v => this.escapeHtml(v)).join(' · ')));
+
+    if (metadata?.title || metadata?.caption) {
+      rows.push(this.infoRow('≡', this.escapeHtml(metadata.title || 'Description'), this.escapeHtml(metadata.caption || '')));
+    }
+
+    if (metadata?.creationDate) {
+      const date = new Date(metadata.creationDate);
+      rows.push(this.infoRow('◷', this.escapeHtml(this.formatDate(date)), this.escapeHtml(date.toISOString())));
+    }
+
+    const grabberRows: string[] = [];
+    if (metadata?.galleryGrabberCreator) {
+      grabberRows.push(`Creator: ${this.escapeHtml(metadata.galleryGrabberCreator)}`);
+    }
+    if (metadata?.galleryGrabberPreservedFileName) {
+      grabberRows.push(`Preserved filename: ${this.escapeHtml(metadata.galleryGrabberPreservedFileName)}`);
+    }
+    if (metadata?.galleryGrabberSource) {
+      grabberRows.push(`Source: ${this.escapeHtml(metadata.galleryGrabberSource)}`);
+    }
+    if (metadata?.galleryGrabberSourceUrl) {
+      const safeUrl = this.escapeHtml(metadata.galleryGrabberSourceUrl);
+      grabberRows.push(`Source URL: <a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${safeUrl}</a>`);
+    }
+    if (metadata?.galleryGrabberSpecialInstructions) {
+      grabberRows.push(`Special instructions: ${this.escapeHtml(metadata.galleryGrabberSpecialInstructions)}`);
+    }
+    if (metadata?.galleryGrabberPrivateMarker) {
+      grabberRows.push('Private marker: Image From Private Railline Gallery');
+    }
+    if (grabberRows.length > 0) {
+      rows.push(this.infoRow('ⓘ', 'Gallery Grabber', grabberRows.join('<br>')));
+    }
+
+    if (metadata?.keywords?.length > 0) {
+      const chips = metadata.keywords
+        .map(k => `<span class="chip">#${this.escapeHtml(k)}</span>`)
+        .join('');
+      rows.push(this.infoRow('⌑', 'Tags', `<div class="chips">${chips}</div>`));
+    }
+
+    if (rows.length === 1) {
+      rows.push(this.infoRow('ⓘ', 'Métadonnées', 'Cette image n’est pas encore enrichie dans la base PiGallery.'));
+    }
+
+    return `<aside class="info"><div class="info-header"><h2>Info</h2></div>${rows.join('')}</aside>`;
+  }
+
+  private static infoRow(icon: string, main: string, sub = ''): string {
+    return `<div class="info-row"><div class="info-icon">${icon}</div><div><div class="details-main">${main}</div>${sub ? `<div class="details-sub">${sub}</div>` : ''}</div></div>`;
+  }
+
+  private static formatBytes(bytes: number): string {
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let value = bytes;
+    let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit++;
+    }
+    return `${value >= 10 || unit === 0 ? value.toFixed(0) : value.toFixed(2)}${units[unit]}`;
+  }
+
+  private static formatDate(date: Date): string {
+    return new Intl.DateTimeFormat('fr-FR', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      timeZone: 'Europe/Paris'
+    }).format(date);
   }
 
   protected static addDirectoryList(app: Express): void {
