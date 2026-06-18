@@ -47,6 +47,7 @@ RUN apt-get update \
     && apt-get clean -q -y \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app /app
+COPY pigallery2plus-entrypoint.js /usr/local/bin/pigallery2plus-entrypoint.js
 
 # Run build time diagnostics to make sure the app would work after build is finished
 RUN ["node", "--expose-gc", "./src/backend/index", "--run-diagnostics", "--config-path=/app/diagnostics-config.json", "--Server-Log-level=silly"]
@@ -56,4 +57,4 @@ HEALTHCHECK --interval=40s --timeout=30s --retries=3 --start-period=60s \
 
 # after a extensive job (like video converting), pigallery calls gc, to clean up everthing as fast as possible
 # Exec form entrypoint is need otherwise (using shell form) ENV variables are not properly passed down to the app
-ENTRYPOINT ["node", "--expose-gc", "./src/backend/index",   "--config-path=/app/data/config/config.json"]
+ENTRYPOINT ["node", "/usr/local/bin/pigallery2plus-entrypoint.js"]
