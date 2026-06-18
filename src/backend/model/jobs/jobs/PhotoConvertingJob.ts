@@ -6,6 +6,7 @@ import {ThumbnailSourceType} from '../../fileaccess/PhotoWorker';
 import {MediaDTOUtils} from '../../../../common/entities/MediaDTO';
 import {FileDTO} from '../../../../common/entities/FileDTO';
 import {backendTexts} from '../../../../common/BackendTexts';
+import {Logger} from '../../../Logger';
 
 export class PhotoConvertingJob extends FileJob<{
   sizes?: number[];
@@ -87,14 +88,25 @@ export class PhotoConvertingJob extends FileJob<{
       if (this.config.maxVideoSize < item && isVideo) {
         continue;
       }
-      await PhotoProcessing.generateThumbnail(
-        mPath,
-        item,
-        isVideo
-          ? ThumbnailSourceType.Video
-          : ThumbnailSourceType.Photo,
-        false
-      );
+      try {
+        await PhotoProcessing.generateThumbnail(
+          mPath,
+          item,
+          isVideo
+            ? ThumbnailSourceType.Video
+            : ThumbnailSourceType.Photo,
+          false
+        );
+      } catch (e) {
+        const message = e instanceof Error ? e.message : e.toString();
+        Logger.warn(
+          this.LOG_TAG,
+          `Skipping thumbnail ${item}px for ${mPath}: ${message}`
+        );
+        this.Progress.log(`thumbnail skipped (${item}px): ${mPath}, ${message}`);
+        this.Progress.Skipped++;
+        this.Progress.DetailSkipped = this.Progress.Skipped;
+      }
     }
   }
 }

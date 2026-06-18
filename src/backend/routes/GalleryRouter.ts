@@ -1,4 +1,5 @@
 import {AuthenticationMWs} from '../middlewares/user/AuthenticationMWs';
+import * as path from 'path';
 import {Express} from 'express';
 import {GalleryMWs} from '../middlewares/GalleryMWs';
 import {RenderingMWs} from '../middlewares/RenderingMWs';
@@ -12,9 +13,12 @@ import {MetaFileMWs} from '../middlewares/MetaFileMWs';
 import {Config} from '../../common/config/private/Config';
 import {SecurityMWs} from '../middlewares/SecurityMWs';
 import {QueryParams} from '../../common/QueryParams';
+import {MailMediaLink} from '../model/messenger/MailMediaLink';
+import {PhotoProcessing} from '../model/fileaccess/fileprocessing/PhotoProcessing';
 
 export class GalleryRouter {
   public static route(app: Express): void {
+    this.addGetSignedMailThumbnail(app);
     this.addGetImageIcon(app);
     this.addGetVideoIcon(app);
     this.addGetResizedPhoto(app);
@@ -30,6 +34,54 @@ export class GalleryRouter {
 
     this.addSearch(app);
     this.addAutoComplete(app);
+  }
+
+  protected static addGetSignedMailThumbnail(app: Express): void {
+    app.get(
+      Config.Server.apiPath + '/gallery/mail-thumbnail/:size/:expires/:signature/:mediaPath(*)',
+      async (req, res, next): Promise<void> => {
+        const mediaPath = req.params['mediaPath'];
+        const size = parseInt(req.params['size'], 10) || Config.Media.Photo.thumbnailSizes[0];
+        const safeSize = Config.Media.Photo.thumbnailSizes.indexOf(size) === -1 ?
+          Config.Media.Photo.thumbnailSizes[0] :
+          size;
+        const expires = parseInt(req.params['expires'], 10);
+        const signature = req.params['signature'];
+        if (!mediaPath || !MailMediaLink.verify(mediaPath, safeSize, expires, signature)) {
+          res.sendStatus(403);
+          return;
+        }
+
+        const absolutePath = MailMediaLink.safeAbsoluteMediaPath(mediaPath);
+        if (!absolutePath) {
+          res.sendStatus(404);
+          return;
+        }
+
+        const lowerExt = path.extname(absolutePath).toLowerCase().replace('.', '');
+        const sourceType = SupportedFormats.Photos.indexOf(lowerExt) !== -1 ?
+            ThumbnailSourceType.Photo :
+          (SupportedFormats.Videos.indexOf(lowerExt) !== -1 ? ThumbnailSourceType.Video : null);
+        if (sourceType === null) {
+          res.sendStatus(404);
+          return;
+        }
+
+        try {
+          req.resultPipe = await PhotoProcessing.generateThumbnail(
+            absolutePath,
+            safeSize,
+            sourceType,
+            false
+          );
+          res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+          res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+          return RenderingMWs.renderFile(req, res, next);
+        } catch (e) {
+          return next(e);
+        }
+      }
+    );
   }
 
   protected static addDirectoryList(app: Express): void {

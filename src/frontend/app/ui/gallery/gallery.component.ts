@@ -297,12 +297,27 @@ export class GalleryComponent implements OnInit, OnDestroy {
     this.directoryContent = content;
     this.currentFeedKey = feedKey;
     this.totalMediaCount = this.contentLoader.content.value?.directory?.mediaPage?.total || loadedMediaCount;
+    const requestedPhoto = this.route.snapshot.queryParams[QueryParams.gallery.photo];
+    const isDirectoryContent = !!this.contentLoader.content.value?.directory;
+    if (requestedPhoto && isDirectoryContent && !this.hasLoadedMedia(requestedPhoto, content.mediaGroups)) {
+      if (this.contentLoader.hasMoreCurrentDirectory()) {
+        this.updateFeedDebug('direct media pending=' + requestedPhoto + ' loaded=' + loadedMediaCount);
+        this.contentLoader.loadMoreCurrentDirectory().catch(console.error);
+        return;
+      }
+    }
     if (feedChanged || previousLoadedMediaCount === 0) {
       this.visibleMediaCount = Math.min(this.feedInitialMediaCount, loadedMediaCount);
     } else if (loadedMediaCount > previousLoadedMediaCount) {
       this.visibleMediaCount = Math.min(loadedMediaCount, previousVisibleMediaCount + this.feedBatchMediaCount);
     } else {
       this.visibleMediaCount = Math.min(previousVisibleMediaCount, loadedMediaCount);
+    }
+    if (requestedPhoto && isDirectoryContent) {
+      const requestedPhotoIndex = this.getLoadedMediaIndex(requestedPhoto, content.mediaGroups);
+      if (requestedPhotoIndex >= 0) {
+        this.visibleMediaCount = Math.max(this.visibleMediaCount, requestedPhotoIndex + 1);
+      }
     }
     this.updateVisibleDirectoryContent();
     this.updateFeedDebug('content feedChanged=' + feedChanged + ' prevLoaded=' + previousLoadedMediaCount + ' loaded=' + loadedMediaCount + ' prevVisible=' + previousVisibleMediaCount + ' visible=' + this.visibleMediaCount);
@@ -439,6 +454,26 @@ export class GalleryComponent implements OnInit, OnDestroy {
       return 0;
     }
     return mediaGroups.reduce((count, mediaGroup) => count + mediaGroup.media.length, 0);
+  }
+
+  private hasLoadedMedia(mediaName: string, mediaGroups: MediaGroup[]): boolean {
+    return this.getLoadedMediaIndex(mediaName, mediaGroups) >= 0;
+  }
+
+  private getLoadedMediaIndex(mediaName: string, mediaGroups: MediaGroup[]): number {
+    if (!mediaGroups) {
+      return -1;
+    }
+    let index = 0;
+    for (const mediaGroup of mediaGroups) {
+      for (const media of mediaGroup.media) {
+        if (media.name === mediaName) {
+          return index;
+        }
+        index++;
+      }
+    }
+    return -1;
   }
 
   private hasVisiblePhotoWithLocation(mediaGroups: MediaGroup[]): boolean {

@@ -75,8 +75,7 @@ export abstract class Job<T extends Record<string, unknown> = Record<string, unk
       const pr = new Promise<void>((resolve): void => {
         this.prResolve = resolve;
       });
-      this.init().catch(console.error);
-      this.run();
+      this.bootstrap();
       if (!this.IsInstant) {
         // if instant, wait for execution, otherwise, return right away
         return Promise.resolve();
@@ -117,7 +116,7 @@ export abstract class Job<T extends Record<string, unknown> = Record<string, unk
   protected abstract init(): Promise<void>;
 
   private onFinish(): void {
-    if (this.InProgress === false) {
+    if (this.Progress === null) {
       return;
     }
     if (this.Progress.State === JobProgressStates.running) {
@@ -141,6 +140,37 @@ export abstract class Job<T extends Record<string, unknown> = Record<string, unk
     this.jobListener.onJobFinished(this, finishState, this.soloRun);
   }
 
+  private formatError(e: unknown): string {
+    if (e instanceof Error) {
+      return e.stack || e.message;
+    }
+    if (e && typeof (e as {toString?: () => string}).toString === 'function') {
+      return (e as {toString: () => string}).toString();
+    }
+    return JSON.stringify(e);
+  }
+
+  private fail(e: unknown): void {
+    Logger.error(this.LOG_TAG, 'Job failed with:');
+    Logger.error(this.LOG_TAG, this.formatError(e));
+    if (this.Progress !== null) {
+      this.Progress.log('Failed with: ' + this.formatError(e));
+      this.Progress.State = JobProgressStates.failed;
+    }
+    this.onFinish();
+  }
+
+  private bootstrap(): void {
+    process.nextTick(async (): Promise<void> => {
+      try {
+        await this.init();
+        this.run();
+      } catch (e) {
+        this.fail(e);
+      }
+    });
+  }
+
   private run(): void {
     // we call setImmediate later.
     process.nextTick(async (): Promise<void> => {
@@ -162,10 +192,7 @@ export abstract class Job<T extends Record<string, unknown> = Record<string, unk
         await new Promise(setImmediate);
         this.run();
       } catch (e) {
-        Logger.error(this.LOG_TAG, 'Job failed with:');
-        Logger.error(this.LOG_TAG, e);
-        this.Progress.log('Failed with: ' + (typeof e.toString === 'function') ? e.toString() : JSON.stringify(e));
-        this.Progress.State = JobProgressStates.failed;
+        this.fail(e);
       }
     });
   }

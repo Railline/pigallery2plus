@@ -6,10 +6,12 @@ import {ThumbnailSourceType} from '../fileaccess/PhotoWorker';
 import * as path from 'path';
 import {Utils} from '../../../common/Utils';
 import {DynamicConfig} from '../../../common/entities/DynamicConfig';
+import {MailMediaLink} from './MailMediaLink';
 
 export interface MediaDTOWithThPath extends MediaDTO {
-  thumbnailPath: string;
+  thumbnailPath: string | null;
   thumbnailUrl: string;
+  mailThumbnailUrl: string;
 }
 
 export abstract class Messenger<C extends Record<string, unknown> = Record<string, unknown>> {
@@ -27,18 +29,34 @@ export abstract class Messenger<C extends Record<string, unknown> = Record<strin
     );
   }
 
+  private encodeUrlComponent(value: string): string {
+    return encodeURIComponent(value).replace(/[!'()*]/g, c =>
+      '%' + c.charCodeAt(0).toString(16).toUpperCase()
+    );
+  }
+
   private getGalleryMediaUrl(m: MediaDTO): string {
-    const galleryPath = encodeURI(
-      Utils.concatUrls('/gallery/', m.directory.path, m.directory.name)
-    )
-      .replace(new RegExp('#', 'g'), '%23')
-      .replace(new RegExp('\\$', 'g'), '%24')
-      .replace(new RegExp('\\?', 'g'), '%3F');
+    const relativeDirectory = Utils.canonizePath(Utils.concatUrls(m.directory.path, m.directory.name));
+    const encodedDirectory = relativeDirectory
+      .split('/')
+      .filter(p => p.length > 0)
+      .map(p => this.encodeUrlComponent(p))
+      .join('/');
+    const galleryPath = Utils.concatUrls('/gallery/', encodedDirectory);
 
     return Utils.concatUrls(
       Config.Server.publicUrl,
       galleryPath
-    ) + '?p=' + encodeURIComponent(m.name);
+    ) + '?p=' + this.encodeUrlComponent(m.name);
+  }
+
+  private getMailThumbnailUrl(m: MediaDTO): string {
+    const expires = Date.now() + MailMediaLink.DEFAULT_TTL_MS;
+    const size = Config.Media.Photo.thumbnailSizes[0];
+    return Utils.concatUrls(
+      Config.Server.publicUrl,
+      MailMediaLink.signedThumbnailPath(MailMediaLink.relativeMediaPath(m), size, expires)
+    );
   }
 
 
@@ -49,8 +67,13 @@ export abstract class Messenger<C extends Record<string, unknown> = Record<strin
       && (input as MediaDTO[])[0]?.metadata?.creationDate) {
       const media = input as MediaDTOWithThPath[];
       for (let i = 0; i < media.length; ++i) {
-        media[i].thumbnailPath = await this.getThumbnail(media[i]);
+        try {
+          media[i].thumbnailPath = await this.getThumbnail(media[i]);
+        } catch (e) {
+          media[i].thumbnailPath = null;
+        }
         media[i].thumbnailUrl = this.getGalleryMediaUrl(media[i]);
+        media[i].mailThumbnailUrl = this.getMailThumbnailUrl(media[i]);
       }
       return await this.sendMedia(config, media);
     }

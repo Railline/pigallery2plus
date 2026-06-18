@@ -187,6 +187,15 @@ export class ContentLoaderService implements OnDestroy {
     }
   }
 
+  public hasMoreCurrentDirectory(): boolean {
+    const page = this.content.value?.directory?.mediaPage;
+    return this.lastContentRequest?.type === 'directory' && page?.hasMore === true;
+  }
+
+  public isLoadingMoreCurrentDirectory(): boolean {
+    return this.loadingMoreDirectory;
+  }
+
   private async loadDirectoryPage(directoryName: string, offset: number, limit: number): Promise<PackedContentWrapperWithError> {
     const params: { [key: string]: unknown } = {
       [QueryParams.gallery.mediaOffset]: offset,

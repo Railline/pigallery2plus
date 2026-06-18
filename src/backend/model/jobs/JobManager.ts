@@ -29,7 +29,7 @@ export class JobManager implements IJobListener, IObjectManager {
   protected get JobNoParallelRunning(): boolean {
     return (
       JobRepository.Instance.getAvailableJobs().findIndex(
-        (j): boolean => j.InProgress === true && j.allowParallelRun
+        (j): boolean => j.InProgress === true && j.allowParallelRun === false
       ) !== -1
     );
   }

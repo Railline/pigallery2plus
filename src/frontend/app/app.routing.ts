@@ -27,10 +27,13 @@ export function galleryMatcherFunction(
   const posParams: { [key: string]: UrlSegment } = {};
   if (path === 'gallery') {
     if (segments.length > 1) {
-      posParams[QueryParams.gallery.directory] = segments[1];
+      posParams[QueryParams.gallery.directory] = new UrlSegment(
+        segments.slice(1).map(s => s.path).join('/'),
+        {}
+      );
     }
     return {
-      consumed: segments.slice(0, Math.min(segments.length, 2)),
+      consumed: segments,
       posParams,
     };
   }
