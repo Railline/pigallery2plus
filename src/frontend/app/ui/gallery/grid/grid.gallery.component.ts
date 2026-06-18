@@ -435,9 +435,10 @@ export class GalleryGridComponent
       }
     }
     if (groupIndex === -1) {
-      this.router.navigate([], {queryParams: this.queryService.getParams()});
+      this.delayedRenderUpToPhoto = mediaStringId;
       return;
     }
+    this.delayedRenderUpToPhoto = null;
     // Make sure that at least one more row is rendered
     // It is possible that only the last few pixels of a photo are visible,
     // so not required to render more. However, the scrollbar does not trigger more photos to render
