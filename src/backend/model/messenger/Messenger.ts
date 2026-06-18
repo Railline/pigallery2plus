@@ -36,18 +36,11 @@ export abstract class Messenger<C extends Record<string, unknown> = Record<strin
   }
 
   private getGalleryMediaUrl(m: MediaDTO): string {
-    const relativeDirectory = Utils.canonizePath(Utils.concatUrls(m.directory.path, m.directory.name));
-    const encodedDirectory = relativeDirectory
-      .split('/')
-      .filter(p => p.length > 0)
-      .map(p => this.encodeUrlComponent(p))
-      .join('/');
-    const galleryPath = Utils.concatUrls('/gallery/', encodedDirectory);
-
+    const expires = Date.now() + MailMediaLink.DEFAULT_TTL_MS;
     return Utils.concatUrls(
       Config.Server.publicUrl,
-      galleryPath
-    ) + '?p=' + this.encodeUrlComponent(m.name);
+      MailMediaLink.signedViewerPath(MailMediaLink.relativeMediaPath(m), expires)
+    );
   }
 
   private getMailThumbnailUrl(m: MediaDTO): string {

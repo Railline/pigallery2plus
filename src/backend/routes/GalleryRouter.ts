@@ -18,6 +18,8 @@ import {PhotoProcessing} from '../model/fileaccess/fileprocessing/PhotoProcessin
 
 export class GalleryRouter {
   public static route(app: Express): void {
+    this.addGetSignedMailViewer(app);
+    this.addGetSignedMailMedia(app);
     this.addGetSignedMailThumbnail(app);
     this.addGetImageIcon(app);
     this.addGetVideoIcon(app);
@@ -34,6 +36,107 @@ export class GalleryRouter {
 
     this.addSearch(app);
     this.addAutoComplete(app);
+  }
+
+  protected static addGetSignedMailViewer(app: Express): void {
+    app.get(
+      Config.Server.apiPath + '/gallery/mail-view/:expires/:signature/:mediaPath(*)',
+      async (req, res): Promise<void> => {
+        const mediaPath = req.params['mediaPath'];
+        const expires = parseInt(req.params['expires'], 10);
+        const signature = req.params['signature'];
+        if (!mediaPath || !MailMediaLink.verify(mediaPath, 0, expires, signature)) {
+          res.sendStatus(403);
+          return;
+        }
+
+        const absolutePath = MailMediaLink.safeAbsoluteMediaPath(mediaPath);
+        if (!absolutePath) {
+          res.sendStatus(404);
+          return;
+        }
+
+        const lowerExt = path.extname(absolutePath).toLowerCase().replace('.', '');
+        const isPhoto = SupportedFormats.Photos.indexOf(lowerExt) !== -1;
+        const isVideo = SupportedFormats.Videos.indexOf(lowerExt) !== -1;
+        if (!isPhoto && !isVideo) {
+          res.sendStatus(404);
+          return;
+        }
+
+        const directoryPath = mediaPath.split('/').slice(0, -1).join('/');
+        const fileName = mediaPath.split('/').pop() || mediaPath;
+        const mediaUrl = MailMediaLink.signedMediaPath(mediaPath, expires);
+        const galleryUrl = this.galleryUrl(directoryPath, fileName);
+        const directoryUrl = this.galleryUrl(directoryPath);
+        const title = this.escapeHtml(fileName);
+        const mediaTag = isVideo ?
+          `<video class="media" src="${this.escapeHtml(mediaUrl)}" controls autoplay playsinline></video>` :
+          `<img class="media" src="${this.escapeHtml(mediaUrl)}" alt="${title}">`;
+
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-store');
+        res.send(`<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>${title}</title>
+  <style>
+    html,body{margin:0;height:100%;background:#05070a;color:#f5f7fb;font-family:Arial,sans-serif}
+    body{display:flex;flex-direction:column;overflow:hidden}
+    .bar{height:48px;display:flex;align-items:center;gap:10px;padding:0 12px;background:#10141c;border-bottom:1px solid #232a36;box-sizing:border-box}
+    .title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;color:#d9e2ef}
+    a{color:#f5f7fb;text-decoration:none}
+    .button{display:inline-flex;align-items:center;height:32px;padding:0 10px;border-radius:6px;background:#263143;border:1px solid #3a4658;font-size:13px}
+    .stage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center}
+    .media{max-width:100vw;max-height:calc(100vh - 48px);object-fit:contain}
+    video.media{width:100vw;height:calc(100vh - 48px);background:#000}
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <a class="button" href="${this.escapeHtml(directoryUrl)}">Fermer</a>
+    <div class="title">${title}</div>
+    <a class="button" href="${this.escapeHtml(galleryUrl)}">PiGallery</a>
+  </div>
+  <div class="stage">${mediaTag}</div>
+</body>
+</html>`);
+      }
+    );
+  }
+
+  protected static addGetSignedMailMedia(app: Express): void {
+    app.get(
+      Config.Server.apiPath + '/gallery/mail-media/:expires/:signature/:mediaPath(*)',
+      async (req, res, next): Promise<void> => {
+        const mediaPath = req.params['mediaPath'];
+        const expires = parseInt(req.params['expires'], 10);
+        const signature = req.params['signature'];
+        if (!mediaPath || !MailMediaLink.verify(mediaPath, 0, expires, signature)) {
+          res.sendStatus(403);
+          return;
+        }
+
+        const absolutePath = MailMediaLink.safeAbsoluteMediaPath(mediaPath);
+        if (!absolutePath) {
+          res.sendStatus(404);
+          return;
+        }
+
+        const lowerExt = path.extname(absolutePath).toLowerCase().replace('.', '');
+        if (SupportedFormats.Photos.indexOf(lowerExt) === -1 && SupportedFormats.Videos.indexOf(lowerExt) === -1) {
+          res.sendStatus(404);
+          return;
+        }
+
+        req.resultPipe = absolutePath;
+        res.setHeader('Cache-Control', 'private, max-age=604800, immutable');
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+        return RenderingMWs.renderFile(req, res, next);
+      }
+    );
   }
 
   protected static addGetSignedMailThumbnail(app: Express): void {
@@ -82,6 +185,33 @@ export class GalleryRouter {
         }
       }
     );
+  }
+
+  private static galleryUrl(directoryPath: string, fileName?: string): string {
+    const encodedDirectory = directoryPath
+      .split('/')
+      .filter(p => p.length > 0)
+      .map(p => encodeURIComponent(p).replace(/[!'()*]/g, c =>
+        '%' + c.charCodeAt(0).toString(16).toUpperCase()
+      ))
+      .join('/');
+    const galleryPath = encodedDirectory ? '/gallery/' + encodedDirectory : '/gallery';
+    if (!fileName) {
+      return galleryPath;
+    }
+    const encodedFileName = encodeURIComponent(fileName).replace(/[!'()*]/g, c =>
+      '%' + c.charCodeAt(0).toString(16).toUpperCase()
+    );
+    return galleryPath + '?p=' + encodedFileName;
+  }
+
+  private static escapeHtml(value: string): string {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   protected static addDirectoryList(app: Express): void {

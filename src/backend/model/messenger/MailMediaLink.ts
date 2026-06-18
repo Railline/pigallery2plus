@@ -46,6 +46,28 @@ export class MailMediaLink {
     );
   }
 
+  public static signedMediaPath(relativeMediaPath: string, expires: number): string {
+    const signature = this.sign(relativeMediaPath, 0, expires);
+    return Utils.concatUrls(
+      Config.Server.apiPath,
+      '/gallery/mail-media/',
+      expires.toString(),
+      signature,
+      this.encodePath(relativeMediaPath)
+    );
+  }
+
+  public static signedViewerPath(relativeMediaPath: string, expires: number): string {
+    const signature = this.sign(relativeMediaPath, 0, expires);
+    return Utils.concatUrls(
+      Config.Server.apiPath,
+      '/gallery/mail-view/',
+      expires.toString(),
+      signature,
+      this.encodePath(relativeMediaPath)
+    );
+  }
+
   public static encodePath(relativeMediaPath: string): string {
     return relativeMediaPath
       .split('/')
