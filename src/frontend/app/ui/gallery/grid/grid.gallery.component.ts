@@ -450,6 +450,7 @@ export class GalleryGridComponent
       // eslint-disable-next-line no-empty
       ) {
     }
+    setTimeout(() => this.lightbox.openMediaStringId(mediaStringId), 0);
   }
 
   private clearRenderedPhotos(): void {

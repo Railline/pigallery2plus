@@ -404,6 +404,22 @@ export class GalleryLightboxComponent implements OnDestroy, OnInit {
     return this.status === LightboxStates.Open;
   }
 
+  public openMediaStringId(photoStringId: string): boolean {
+    if (!photoStringId || !this.gridPhotoQL) {
+      return false;
+    }
+    const photo = this.gridPhotoQL.find(
+      (i): boolean =>
+        this.queryService.getMediaStringId(i.gridMedia.media) === photoStringId
+    );
+    if (!photo) {
+      this.delayedMediaShow = photoStringId;
+      return false;
+    }
+    this.onNavigateTo(photoStringId);
+    return true;
+  }
+
   onVideoSourceError(): void {
     this.videoSourceError = true;
   }
@@ -601,4 +617,3 @@ export class GalleryLightboxComponent implements OnDestroy, OnInit {
     return {top, left, width, height} as Dimension;
   }
 }
-
