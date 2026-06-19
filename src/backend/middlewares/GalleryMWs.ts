@@ -391,23 +391,19 @@ export class GalleryMWs {
       return next();
     }
 
-    try {
-      Logger.info(
-        '[GalleryMWs]',
-        'Transcoding video on demand for browser playback:',
-        req.params['mediaPath']
-      );
-      await VideoProcessing.convertVideo(fullMediaPath);
-      await fsp.access(convertedVideo);
-      req.resultPipe = convertedVideo;
-    } catch (e) {
+    Logger.info(
+      '[GalleryMWs]',
+      'Starting background video transcode for browser playback:',
+      req.params['mediaPath']
+    );
+    VideoProcessing.convertVideo(fullMediaPath).catch((e: unknown): void => {
       Logger.warn(
         '[GalleryMWs]',
-        'Could not transcode video on demand, falling back to original:',
+        'Could not transcode video in background:',
         req.params['mediaPath'],
         e as Error
       );
-    }
+    });
 
     return next();
   }

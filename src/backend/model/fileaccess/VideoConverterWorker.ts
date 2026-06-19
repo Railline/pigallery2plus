@@ -71,6 +71,10 @@ export class VideoConverterWorker {
       }
       // set target codec
       command.videoCodec(input.output.codec);
+      if (input.output.format === 'mp4') {
+        command.audioCodec('aac');
+        command.addOption(['-pix_fmt yuv420p', '-movflags +faststart']);
+      }
       if (input.output.resolution) {
         command.size('?x' + input.output.resolution);
       }
