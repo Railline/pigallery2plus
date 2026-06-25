@@ -23,6 +23,8 @@ import {ContextUser} from '../model/SessionContext';
 export class GalleryMWs {
   private static readonly RANDOM_CACHE_TTL = 15 * 60 * 1000;
   private static readonly RANDOM_CACHE_MAX = 64;
+  private static readonly RANDOM_BATCH_SIZE = 15;
+  private static readonly RANDOM_REFILL_THRESHOLD = 5;
   private static readonly randomMediaPathCache = new Map<string, {
     paths: string[],
     expires: number,
@@ -498,35 +500,45 @@ export class GalleryMWs {
       const started = Date.now();
       const cacheKey = GalleryMWs.getRandomCacheKey(req, query);
       let cache = GalleryMWs.randomMediaPathCache.get(cacheKey);
+      const now = Date.now();
 
-      if (!cache || cache.expires <= Date.now()) {
-        const sqlStarted = Date.now();
-        const paths = await ObjectManagers.getInstance().SearchManager.getMediaPaths(
-          req.session.context,
-          query,
-          true
-        );
+      if (!cache || cache.expires <= now) {
         cache = {
-          paths,
+          paths: [],
           expires: Date.now() + GalleryMWs.RANDOM_CACHE_TTL,
           created: Date.now(),
           hits: 0,
         };
         GalleryMWs.randomMediaPathCache.set(cacheKey, cache);
         GalleryMWs.trimRandomCache();
+      } else {
+        cache.hits++;
+      }
+
+      if (cache.paths.length <= GalleryMWs.RANDOM_REFILL_THRESHOLD) {
+        const sqlStarted = Date.now();
+        const paths = await ObjectManagers.getInstance().SearchManager.getRandomMediaPaths(
+          req.session.context,
+          query,
+          GalleryMWs.RANDOM_BATCH_SIZE,
+          true
+        );
+        GalleryMWs.shuffle(paths);
+        cache.paths = paths.slice(0, GalleryMWs.RANDOM_BATCH_SIZE);
+        cache.expires = Date.now() + GalleryMWs.RANDOM_CACHE_TTL;
         Logger.info(
           '[RandomPhoto]',
-          'cache miss',
-          'items=' + paths.length,
+          'cache refill',
+          'batch=' + paths.length,
+          'remaining=' + cache.paths.length,
           'sqlMs=' + (Date.now() - sqlStarted),
           'key=' + cacheKey.slice(0, 16)
         );
       } else {
-        cache.hits++;
         Logger.info(
           '[RandomPhoto]',
           'cache hit',
-          'items=' + cache.paths.length,
+          'remaining=' + cache.paths.length,
           'hits=' + cache.hits,
           'key=' + cacheKey.slice(0, 16)
         );
@@ -536,12 +548,13 @@ export class GalleryMWs {
         return next(new ErrorDTO(ErrorCodes.INPUT_ERROR, 'No photo found'));
       }
 
-      const selected = cache.paths[Math.floor(Math.random() * cache.paths.length)];
+      const selected = cache.paths.shift();
       req.params['mediaPath'] = selected;
       Logger.info(
         '[RandomPhoto]',
         'selected',
         'totalMs=' + (Date.now() - started),
+        'remaining=' + cache.paths.length,
         'path=' + selected
       );
       return next();
@@ -659,6 +672,13 @@ export class GalleryMWs {
       .sort((a, b) => a[1].created - b[1].created);
     for (const [key] of entries.slice(0, GalleryMWs.randomMediaPathCache.size - GalleryMWs.RANDOM_CACHE_MAX)) {
       GalleryMWs.randomMediaPathCache.delete(key);
+    }
+  }
+
+  private static shuffle<T>(items: T[]): void {
+    for (let i = items.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [items[i], items[j]] = [items[j], items[i]];
     }
   }
 }

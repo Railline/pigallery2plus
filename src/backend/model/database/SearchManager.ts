@@ -515,6 +515,31 @@ export class SearchManager {
     ));
   }
 
+  public async getRandomMediaPaths(session: SessionContext, query: SearchQueryDTO, take: number, photoOnly = true): Promise<string[]> {
+    const connection = await SQLConnection.getConnection();
+    const sqlQuery: SelectQueryBuilder<PhotoEntity> = connection
+      .getRepository(photoOnly ? PhotoEntity : MediaEntity)
+      .createQueryBuilder('media')
+      .select(['media.name', ...this.DIRECTORY_SELECT])
+      .innerJoin('media.directory', 'directory')
+      .where(await this.prepareAndBuildWhereQuery(query));
+
+    if (session.projectionQuery) {
+      sqlQuery.andWhere(session.projectionQuery);
+    }
+
+    sqlQuery
+      .orderBy(Config.Database.type === DatabaseType.mysql ? 'RAND()' : 'RANDOM()')
+      .limit(take);
+
+    const media = await sqlQuery.getMany();
+    return media.map((m) => Utils.concatUrls(
+      (m.directory as unknown as { path: string, name: string }).path,
+      (m.directory as unknown as { path: string, name: string }).name,
+      m.name
+    ));
+  }
+
   public async getCount(session: SessionContext, query: SearchQueryDTO): Promise<number> {
     const connection = await SQLConnection.getConnection();
 
