@@ -94,12 +94,13 @@ export class RenderingMWs {
       return next();
     }
     const filePath = req.resultPipe as string;
+    const fileName = path.basename(filePath);
     if (!res.hasHeader('Cache-Control')) {
       res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
     }
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('X-Accel-Buffering', 'no');
-    res.setHeader('Content-Disposition', `inline; filename="${path.basename(filePath).replace(/["\\]/g, '_')}"`);
+    res.setHeader('Content-Disposition', RenderingMWs.contentDispositionInline(fileName));
 
     return res.sendFile(filePath, {
       maxAge: 31536000,
@@ -107,6 +108,17 @@ export class RenderingMWs {
       acceptRanges: true,
       lastModified: true,
     });
+  }
+
+  private static contentDispositionInline(fileName: string): string {
+    const fallback = fileName
+      .replace(/[^\x20-\x7E]/g, '_')
+      .replace(/["\\]/g, '_');
+    const encoded = encodeURIComponent(fileName)
+      .replace(/[!'()*]/g, (c: string): string =>
+        `%${c.charCodeAt(0).toString(16).toUpperCase()}`
+      );
+    return `inline; filename="${fallback}"; filename*=UTF-8''${encoded}`;
   }
 
   public static renderOK(

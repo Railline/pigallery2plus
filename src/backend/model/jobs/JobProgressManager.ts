@@ -6,21 +6,20 @@ import {JobProgressDTO, JobProgressStates,} from '../../../common/entities/job/J
 
 export class JobProgressManager {
   private static readonly VERSION = 3;
-  private db: {
-    version: number;
-    progresses: {
-      [key: string]: { progress: JobProgressDTO; timestamp: number };
-    };
-  } = {
-    version: JobProgressManager.VERSION,
-    progresses: {},
-  };
+  private db: JobProgressDB = JobProgressManager.createEmptyDB();
   private readonly dbPath: string;
   private timer: NodeJS.Timeout = null;
 
   constructor() {
     this.dbPath = path.join(ProjectPath.DBFolder, 'jobs.db');
     this.loadDB().catch(console.error);
+  }
+
+  private static createEmptyDB(): JobProgressDB {
+    return {
+      version: JobProgressManager.VERSION,
+      progresses: {},
+    };
   }
 
   get Progresses(): { [key: string]: JobProgressDTO } {
@@ -47,9 +46,31 @@ export class JobProgressManager {
     } catch (e) {
       return;
     }
-    const data = await fsp.readFile(this.dbPath, 'utf8');
-    const db = JSON.parse(data);
-    if (db.version !== JobProgressManager.VERSION) {
+
+    const data = (await fsp.readFile(this.dbPath, 'utf8')).trim();
+    if (data.length === 0) {
+      this.db = JobProgressManager.createEmptyDB();
+      await this.saveDB();
+      return;
+    }
+
+    let db: JobProgressDB;
+    try {
+      db = JSON.parse(data) as JobProgressDB;
+    } catch (e) {
+      const backupPath = `${this.dbPath}.invalid-${Date.now()}`;
+      await fsp.rename(this.dbPath, backupPath).catch(console.error);
+      this.db = JobProgressManager.createEmptyDB();
+      await this.saveDB();
+      console.warn(`Invalid jobs progress database moved to ${backupPath}`);
+      return;
+    }
+
+    if (
+      db.version !== JobProgressManager.VERSION ||
+      typeof db.progresses !== 'object' ||
+      db.progresses === null
+    ) {
       return;
     }
     this.db = db;
@@ -94,3 +115,10 @@ export class JobProgressManager {
     }, 1000);
   }
 }
+
+type JobProgressDB = {
+  version: number;
+  progresses: {
+    [key: string]: { progress: JobProgressDTO; timestamp: number };
+  };
+};
