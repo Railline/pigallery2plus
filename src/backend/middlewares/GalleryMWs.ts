@@ -82,10 +82,10 @@ export class GalleryMWs {
     next: NextFunction
   ): Promise<void> {
     const directoryName = req.params['directory'] || '/';
-    const absoluteDirectoryName = path.join(
-      ProjectPath.ImageFolder,
-      directoryName
-    );
+    const absoluteDirectoryName = ProjectPath.resolveMediaPath(directoryName);
+    if (!absoluteDirectoryName) {
+      return next();
+    }
     try {
       if ((await fsp.stat(absoluteDirectoryName)).isDirectory() === false) {
         return next();
@@ -178,12 +178,14 @@ export class GalleryMWs {
 
       // Add each media file to the archive with unique names
       for (const media of searchResult.media) {
-        const mediaPath = path.join(
-          ProjectPath.ImageFolder,
+        const mediaPath = ProjectPath.resolveMediaPath(path.join(
           media.directory.path,
           media.directory.name,
           media.name
-        );
+        ));
+        if (!mediaPath) {
+          continue;
+        }
 
         // Get file extension and base name
         const ext = path.extname(media.name);
@@ -339,10 +341,16 @@ export class GalleryMWs {
     if (!req.params['mediaPath']) {
       return next();
     }
-    const fullMediaPath = path.join(
-      ProjectPath.ImageFolder,
-      req.params['mediaPath']
-    );
+    const fullMediaPath = ProjectPath.resolveMediaPath(req.params['mediaPath']);
+    if (!fullMediaPath) {
+      return next(
+        new ErrorDTO(
+          ErrorCodes.PATH_ERROR,
+          'invalid media path:' + req.params['mediaPath'],
+          'path is outside media root'
+        )
+      );
+    }
 
     // check if file exist
     try {

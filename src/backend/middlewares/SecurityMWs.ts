@@ -11,6 +11,7 @@ export class SecurityMWs {
   private static readonly loginAttempts = new Map<string, RateLimitEntry>();
   private static readonly rateLimitWindowMs = 15 * 60 * 1000;
   private static readonly rateLimitMaxAttempts = 20;
+  private static readonly rateLimitMaxEntries = 4096;
 
   public static securityHeaders(req: Request, res: Response, next: NextFunction): void {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -74,6 +75,7 @@ export class SecurityMWs {
 
   public static loginRateLimit(req: Request, res: Response, next: NextFunction): void {
     const now = Date.now();
+    SecurityMWs.pruneLoginAttempts(now);
     const key = req.ip + ':' + req.path;
     const current = SecurityMWs.loginAttempts.get(key);
 
@@ -88,5 +90,28 @@ export class SecurityMWs {
       return next(new ErrorDTO(ErrorCodes.NOT_AUTHORISED, 'Too many login attempts'));
     }
     return next();
+  }
+
+  private static pruneLoginAttempts(now: number): void {
+    if (SecurityMWs.loginAttempts.size <= SecurityMWs.rateLimitMaxEntries) {
+      return;
+    }
+
+    for (const [key, entry] of SecurityMWs.loginAttempts.entries()) {
+      if (entry.resetAt <= now) {
+        SecurityMWs.loginAttempts.delete(key);
+      }
+    }
+
+    if (SecurityMWs.loginAttempts.size <= SecurityMWs.rateLimitMaxEntries) {
+      return;
+    }
+
+    for (const key of SecurityMWs.loginAttempts.keys()) {
+      SecurityMWs.loginAttempts.delete(key);
+      if (SecurityMWs.loginAttempts.size <= SecurityMWs.rateLimitMaxEntries) {
+        break;
+      }
+    }
   }
 }

@@ -12,6 +12,7 @@ import {TAGS} from '../../common/config/public/ClientConfig';
 import {ExtensionConfigWrapper} from '../model/extension/ExtensionConfigWrapper';
 import {SharingEntity} from '../model/database/enitites/SharingEntity';
 import {Config} from '../../common/config/private/Config';
+import * as path from 'path';
 
 const forcedDebug = process.env['NODE_ENV'] === 'debug';
 
@@ -92,9 +93,19 @@ export class RenderingMWs {
     if (!req.resultPipe) {
       return next();
     }
-    return res.sendFile(req.resultPipe as string, {
+    const filePath = req.resultPipe as string;
+    if (!res.hasHeader('Cache-Control')) {
+      res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+    }
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.setHeader('Content-Disposition', `inline; filename="${path.basename(filePath).replace(/["\\]/g, '_')}"`);
+
+    return res.sendFile(filePath, {
       maxAge: 31536000,
       dotfiles: 'allow',
+      acceptRanges: true,
+      lastModified: true,
     });
   }
 

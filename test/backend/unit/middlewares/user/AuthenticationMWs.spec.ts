@@ -626,7 +626,7 @@ describe('Authentication middleware', (sqlHelper: DBTestHelper) => {
         }
       },
       params: {
-        mediaPath: path.normalize(mediaRelPath)
+        mediaPath: path.normalize(mediaRelPath).replace(/^[/\\]+/, '')
       }
     });
 
@@ -676,6 +676,34 @@ describe('Authentication middleware', (sqlHelper: DBTestHelper) => {
       const result = await run(req);
       expect(result).to.eql(403);
     });
+
+    it('should reject path traversal before media authorisation', async () => {
+      const req = buildReq('../secret/photo.jpg');
+      const res = {
+        status: (code: number) => {
+          expect(code).to.eql(400);
+          return res;
+        },
+      } as any;
+      const result = await new Promise((resolve) => {
+        AuthenticationMWs.normalizePathParam('mediaPath')(req as any, res, ((err: ErrorDTO) => resolve(err)) as any);
+      });
+      expect((result as ErrorDTO).code).to.eql(ErrorCodes.PATH_ERROR);
+    });
+
+    it('should reject encoded backslash traversal before media authorisation', async () => {
+      const req = buildReq('allowed\\..\\secret\\photo.jpg');
+      const res = {
+        status: (code: number) => {
+          expect(code).to.eql(400);
+          return res;
+        },
+      } as any;
+      const result = await new Promise((resolve) => {
+        AuthenticationMWs.normalizePathParam('mediaPath')(req as any, res, ((err: ErrorDTO) => resolve(err)) as any);
+      });
+      expect((result as ErrorDTO).code).to.eql(ErrorCodes.PATH_ERROR);
+    });
   });
 
   describe('authoriseMetaFiles', () => {
@@ -686,7 +714,7 @@ describe('Authentication middleware', (sqlHelper: DBTestHelper) => {
         }
       },
       params: {
-        metaPath: path.normalize(metaPath)
+        metaPath: path.normalize(metaPath).replace(/^[/\\]+/, '')
       }
     });
 

@@ -96,10 +96,25 @@ export class AuthenticationMWs {
       res: Response,
       next: NextFunction
     ): void {
-      req.params[paramName] = path
-        .normalize(req.params[paramName] || path.sep)
-        // eslint-disable-next-line no-useless-escape
-        .replace(/^(\.\.[\/\\])+/, '');
+      if (!req.params[paramName]) {
+        req.params[paramName] = path.sep;
+        return next();
+      }
+      const originalPath = req.params[paramName].replace(/\\/g, '/');
+      if (originalPath.split('/').includes('..')) {
+        res.status(400);
+        return next(new ErrorDTO(ErrorCodes.PATH_ERROR, 'Invalid path'));
+      }
+      const normalizedPath = path.posix.normalize(originalPath);
+      if (
+        path.posix.isAbsolute(normalizedPath) ||
+        normalizedPath === '..' ||
+        normalizedPath.startsWith('../')
+      ) {
+        res.status(400);
+        return next(new ErrorDTO(ErrorCodes.PATH_ERROR, 'Invalid path'));
+      }
+      req.params[paramName] = normalizedPath === '.' ? path.sep : normalizedPath;
       return next();
     };
   }

@@ -4,6 +4,7 @@ import {Client, generators, Issuer, TokenSet} from 'openid-client';
 import {UserDTO, UserRoles} from '../../../common/entities/UserDTO';
 import {ErrorCodes, ErrorDTO} from '../../../common/entities/Error';
 import {ObjectManagers} from '../../model/ObjectManagers';
+import * as crypto from 'crypto';
 
 export class OIDCAuthService {
   private static clientPromise: Promise<Client> | null = null;
@@ -64,7 +65,7 @@ export class OIDCAuthService {
     // try find user by name
     let user = await ObjectManagers.getInstance().UserManager.findOne({name: matchedName});
     if (!user && Config.Users.oidc.autoCreateUser) {
-      const rnd = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+      const rnd = crypto.randomBytes(32).toString('base64url');
       const newUser: UserDTO = {name: matchedName, password: rnd, role: UserRoles.Guest} as any;
       user = await ObjectManagers.getInstance().UserManager.createUser(newUser);
     }

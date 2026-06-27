@@ -88,6 +88,10 @@ export class MailMediaLink {
   }
 
   private static secret(): string {
-    return (Config.Server.sessionSecret && Config.Server.sessionSecret[0]) || Config.Server.publicUrl || 'pigallery2plus';
+    const secret = Config.Server.sessionSecret && Config.Server.sessionSecret[0];
+    if (!secret) {
+      throw new Error('Mail media links require a configured server session secret');
+    }
+    return secret;
   }
 }

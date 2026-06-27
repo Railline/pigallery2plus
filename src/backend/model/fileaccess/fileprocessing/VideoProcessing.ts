@@ -16,11 +16,16 @@ export class VideoProcessing {
   private static readonly inProgressConversions = new Map<string, Promise<void>>();
 
   public static generateConvertedFilePath(videoPath: string): string {
-    return path.join(
-      ProjectPath.TranscodedFolder,
+    const convertedPath = ProjectPath.resolveTranscodedPath(path.join(
       ProjectPath.getRelativePathToImages(path.dirname(videoPath)),
       path.basename(videoPath) + '_' + this.getConvertedFilePostFix()
-    );
+    ));
+
+    if (!convertedPath) {
+      throw new Error('Invalid converted video path');
+    }
+
+    return convertedPath;
   }
 
   public static async isValidConvertedPath(

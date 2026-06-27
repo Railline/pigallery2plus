@@ -517,20 +517,33 @@ export class SearchManager {
 
   public async getRandomMediaPaths(session: SessionContext, query: SearchQueryDTO, take: number, photoOnly = true): Promise<string[]> {
     const connection = await SQLConnection.getConnection();
+    const whereQuery = await this.prepareAndBuildWhereQuery(query);
     const sqlQuery: SelectQueryBuilder<PhotoEntity> = connection
       .getRepository(photoOnly ? PhotoEntity : MediaEntity)
       .createQueryBuilder('media')
-      .select(['media.name', ...this.DIRECTORY_SELECT])
+      .select(['media.id', 'media.name', ...this.DIRECTORY_SELECT])
       .innerJoin('media.directory', 'directory')
-      .where(await this.prepareAndBuildWhereQuery(query));
+      .where(whereQuery);
 
     if (session.projectionQuery) {
       sqlQuery.andWhere(session.projectionQuery);
     }
 
-    sqlQuery
-      .orderBy(Config.Database.type === DatabaseType.mysql ? 'RAND()' : 'RANDOM()')
-      .limit(take);
+    const randomSortThreshold = 5000;
+    const countQuery = sqlQuery.clone();
+    const count = await countQuery.getCount();
+
+    if (count > randomSortThreshold) {
+      const offset = Math.max(0, Math.floor(Math.random() * Math.max(1, count - take)));
+      sqlQuery
+        .orderBy('media.id', 'ASC')
+        .offset(offset)
+        .limit(take);
+    } else {
+      sqlQuery
+        .orderBy(Config.Database.type === DatabaseType.mysql ? 'RAND()' : 'RANDOM()')
+        .limit(take);
+    }
 
     const media = await sqlQuery.getMany();
     return media.map((m) => Utils.concatUrls(

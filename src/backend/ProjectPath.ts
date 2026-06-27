@@ -30,6 +30,31 @@ export class ProjectPathClass {
     return path.relative(this.ImageFolder, pathStr);
   }
 
+  public resolveInside(rootPath: string, relativePath: string): string | null {
+    const root = path.resolve(rootPath);
+    if (!relativePath || relativePath === path.sep || relativePath === '/') {
+      return root;
+    }
+    if (path.isAbsolute(relativePath)) {
+      return null;
+    }
+    const candidate = path.resolve(root, relativePath || '');
+
+    if (candidate === root || candidate.startsWith(root + path.sep)) {
+      return candidate;
+    }
+
+    return null;
+  }
+
+  public resolveMediaPath(relativePath: string): string | null {
+    return this.resolveInside(this.ImageFolder, relativePath);
+  }
+
+  public resolveTranscodedPath(relativePath: string): string | null {
+    return this.resolveInside(this.TranscodedFolder, relativePath);
+  }
+
   reset(): void {
     this.Root = path.join(__dirname, '/../../');
     this.FrontendFolder = path.join(this.Root, 'dist');

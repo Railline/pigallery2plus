@@ -285,8 +285,13 @@ export class GalleryRouter {
       grabberRows.push(`Source: ${this.escapeHtml(metadata.galleryGrabberSource)}`);
     }
     if (metadata?.galleryGrabberSourceUrl) {
-      const safeUrl = this.escapeHtml(metadata.galleryGrabberSourceUrl);
-      grabberRows.push(`Source URL: <a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${safeUrl}</a>`);
+      const safeUrl = this.safeExternalUrl(metadata.galleryGrabberSourceUrl);
+      if (safeUrl) {
+        const escapedUrl = this.escapeHtml(safeUrl);
+        grabberRows.push(`Source URL: <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a>`);
+      } else {
+        grabberRows.push(`Source URL: ${this.escapeHtml(metadata.galleryGrabberSourceUrl)}`);
+      }
     }
     if (metadata?.galleryGrabberSpecialInstructions) {
       grabberRows.push(`Special instructions: ${this.escapeHtml(metadata.galleryGrabberSpecialInstructions)}`);
@@ -314,6 +319,18 @@ export class GalleryRouter {
 
   private static infoRow(icon: string, main: string, sub = ''): string {
     return `<div class="info-row"><div class="info-icon">${icon}</div><div><div class="details-main">${main}</div>${sub ? `<div class="details-sub">${sub}</div>` : ''}</div></div>`;
+  }
+
+  private static safeExternalUrl(value: string): string | null {
+    try {
+      const parsed = new URL(value);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        return parsed.toString();
+      }
+    } catch (e) {
+      // Invalid URLs are rendered as plain text.
+    }
+    return null;
   }
 
   private static formatBytes(bytes: number): string {
