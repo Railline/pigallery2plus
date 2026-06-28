@@ -15,6 +15,7 @@ export class PhotoProcessing {
   private static initDone = false;
   private static taskQue: ITaskExecuter<MediaRendererInput | SvgRendererInput, void> = null;
   private static readonly CONVERTED_EXTENSION = '.webp';
+  private static readonly thumbnailGenerationInFlight = new Map<string, Promise<string>>();
 
   public static init(): void {
     if (this.initDone === true) {
@@ -275,6 +276,11 @@ export class PhotoProcessing {
       // ignoring errors
     }
 
+    const runningGeneration = PhotoProcessing.thumbnailGenerationInFlight.get(outPath);
+    if (runningGeneration) {
+      return runningGeneration;
+    }
+
     // run on other thread
     const input = {
       type: sourceType,
@@ -291,9 +297,19 @@ export class PhotoProcessing {
 
     const outDir = path.dirname(input.outPath);
 
-    await fsp.mkdir(outDir, {recursive: true});
-    await this.taskQue.execute(input);
-    return outPath;
+    const generation = (async (): Promise<string> => {
+      await fsp.mkdir(outDir, {recursive: true});
+      await this.taskQue.execute(input);
+      return outPath;
+    })();
+    PhotoProcessing.thumbnailGenerationInFlight.set(outPath, generation);
+    try {
+      return await generation;
+    } finally {
+      if (PhotoProcessing.thumbnailGenerationInFlight.get(outPath) === generation) {
+        PhotoProcessing.thumbnailGenerationInFlight.delete(outPath);
+      }
+    }
   }
 
   public static isPhoto(fullPath: string): boolean {
@@ -350,4 +366,3 @@ viewBox="${svgIcon.viewBox || '0 0 512 512'}">d="${svgIcon.items}</svg>`,
   }
 
 }
-

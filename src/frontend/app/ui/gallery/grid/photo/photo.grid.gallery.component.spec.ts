@@ -10,11 +10,17 @@ import {MediaButtonModalService} from './media-button-modal/media-button-modal.s
 
 class MockThumbnailManagerService {
   getThumbnail() {
+    return this.getLazyThumbnail();
+  }
+
+  getLazyThumbnail() {
     return {
       Available: true,
       Src: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=',
       Error: false,
       loading: false,
+      load() {
+      },
       destroy() {
       },
     };

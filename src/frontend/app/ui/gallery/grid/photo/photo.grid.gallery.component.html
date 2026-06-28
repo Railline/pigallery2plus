@@ -2,6 +2,8 @@
 
 
   <img alt="{{gridMedia.media.name}}" #img [src]="thumbnail.Src"
+       loading="lazy"
+       decoding="async"
        (load)="loaded=true"
        [class.loading]="!loaded"
        *ngIf="thumbnail.Available">

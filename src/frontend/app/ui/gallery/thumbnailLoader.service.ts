@@ -170,11 +170,11 @@ export class ThumbnailLoaderService {
     }
 
     let highestPriority: ThumbnailTask = null;
-    let currentPriority: ThumbnailLoadingPriority = Number.MAX_SAFE_INTEGER;
+    let currentPriority: ThumbnailLoadingPriority = Number.MIN_SAFE_INTEGER;
     for (const item1 of this.que) {
       for (const item of item1.taskEntities) {
         if (item1.inProgress === false) {
-          if (highestPriority == null || currentPriority < item.priority) {
+          if (highestPriority == null || item.priority > currentPriority) {
             highestPriority = item1;
             currentPriority = item.priority;
             if (currentPriority === ThumbnailLoadingPriority.extraHigh) {
@@ -218,4 +218,3 @@ interface ThumbnailTask {
   path: string;
   onLoaded: () => void;
 }
-

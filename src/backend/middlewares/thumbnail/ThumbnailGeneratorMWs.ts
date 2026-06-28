@@ -15,6 +15,10 @@ import {PersonEntry} from '../../model/database/enitites/person/PersonEntry';
 export class ThumbnailGeneratorMWs {
   private static ThumbnailMapEntries =
     Config.Media.Photo.generateThumbnailMapEntries();
+  private static readonly ThumbnailExistenceCacheMax = 20000;
+  private static readonly ThumbnailExistenceCacheTtl = 5 * 60 * 1000;
+  private static readonly MissingThumbnailExistenceCacheTtl = 15 * 1000;
+  private static readonly thumbnailExistenceCache = new Map<string, { exists: boolean; expires: number }>();
 
   @ServerTime('2.th', 'Thumbnail decoration')
   public static async addThumbnailInformation(
@@ -93,7 +97,7 @@ export class ThumbnailGeneratorMWs {
           size
         );
 
-        item.missingThumbnail = !fs.existsSync(thPath);
+        item.missingThumbnail = !ThumbnailGeneratorMWs.convertedPathExists(thPath);
       }
     } catch (error) {
       res.status(500);
@@ -242,7 +246,7 @@ export class ThumbnailGeneratorMWs {
         fullMediaPath,
         entry.size
       );
-      if (fs.existsSync(thPath) !== true) {
+      if (ThumbnailGeneratorMWs.convertedPathExists(thPath) !== true) {
         if (typeof photo.missingThumbnails === 'undefined') {
           photo.missingThumbnails = 0;
         }
@@ -251,5 +255,34 @@ export class ThumbnailGeneratorMWs {
       }
     }
   }
-}
 
+  private static convertedPathExists(thPath: string): boolean {
+    const now = Date.now();
+    const cached = ThumbnailGeneratorMWs.thumbnailExistenceCache.get(thPath);
+    if (cached && cached.expires > now) {
+      return cached.exists;
+    }
+
+    const exists = fs.existsSync(thPath);
+    ThumbnailGeneratorMWs.thumbnailExistenceCache.set(thPath, {
+      exists,
+      expires: now + (exists ?
+        ThumbnailGeneratorMWs.ThumbnailExistenceCacheTtl :
+        ThumbnailGeneratorMWs.MissingThumbnailExistenceCacheTtl),
+    });
+
+    if (ThumbnailGeneratorMWs.thumbnailExistenceCache.size > ThumbnailGeneratorMWs.ThumbnailExistenceCacheMax) {
+      const overflow = ThumbnailGeneratorMWs.thumbnailExistenceCache.size - ThumbnailGeneratorMWs.ThumbnailExistenceCacheMax;
+      let removed = 0;
+      for (const key of ThumbnailGeneratorMWs.thumbnailExistenceCache.keys()) {
+        ThumbnailGeneratorMWs.thumbnailExistenceCache.delete(key);
+        removed++;
+        if (removed >= overflow) {
+          break;
+        }
+      }
+    }
+
+    return exists;
+  }
+}

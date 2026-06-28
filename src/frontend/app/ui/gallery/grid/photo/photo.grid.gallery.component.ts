@@ -1,4 +1,4 @@
-import {Component, ElementRef, Input, OnDestroy, OnInit, ViewChild,} from '@angular/core';
+import {AfterViewInit, Component, ElementRef, Input, OnDestroy, OnInit, ViewChild,} from '@angular/core';
 import {Dimension, IRenderable} from '../../../../model/IRenderable';
 import {GridMedia} from '../GridMedia';
 import {RouterLink} from '@angular/router';
@@ -39,7 +39,7 @@ export interface IClientMediaButtonConfigWithBaseApiPath extends IClientMediaBut
     SafeHtmlPipe,
   ]
 })
-export class GalleryPhotoComponent implements IRenderable, OnInit, OnDestroy {
+export class GalleryPhotoComponent implements IRenderable, OnInit, AfterViewInit, OnDestroy {
   @Input() gridMedia: GridMedia;
   @ViewChild('img', {static: false}) imageRef: ElementRef;
   @ViewChild('photoContainer', {static: true}) container: ElementRef;
@@ -55,6 +55,7 @@ export class GalleryPhotoComponent implements IRenderable, OnInit, OnDestroy {
   wasInView: boolean = null;
   loaded = false;
   public mediaButtons: IClientMediaButtonConfigWithBaseApiPath[];
+  private intersectionObserver: IntersectionObserver = null;
 
   constructor(
     private thumbnailService: ThumbnailManagerService,
@@ -158,7 +159,7 @@ export class GalleryPhotoComponent implements IRenderable, OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
-    this.thumbnail = this.thumbnailService.getThumbnail(this.gridMedia);
+    this.thumbnail = this.thumbnailService.getLazyThumbnail(this.gridMedia);
     const metadata = this.gridMedia.media.metadata as PhotoMetadata;
     if (
       (metadata.keywords && metadata.keywords.length > 0) ||
@@ -189,8 +190,13 @@ export class GalleryPhotoComponent implements IRenderable, OnInit, OnDestroy {
     this.updateMediaButtons();
   }
 
+  ngAfterViewInit(): void {
+    this.startLazyThumbnailLoading();
+  }
+
   ngOnDestroy(): void {
-    this.thumbnail.destroy();
+    this.disconnectIntersectionObserver();
+    this.thumbnail?.destroy();
 
     if (this.animationTimer != null) {
       clearTimeout(this.animationTimer);
@@ -215,6 +221,42 @@ export class GalleryPhotoComponent implements IRenderable, OnInit, OnDestroy {
     if (this.wasInView !== isInView) {
       this.wasInView = isInView;
       this.thumbnail.Visible = isInView;
+      if (isInView) {
+        this.thumbnail.load();
+      }
+    }
+  }
+
+  private startLazyThumbnailLoading(): void {
+    if (this.thumbnail.Available === true || this.thumbnail.Error === true) {
+      return;
+    }
+
+    if (typeof IntersectionObserver === 'undefined') {
+      this.thumbnail.load();
+      return;
+    }
+
+    this.intersectionObserver = new IntersectionObserver((entries): void => {
+      if (!entries.some((entry): boolean => entry.isIntersecting)) {
+        return;
+      }
+      this.wasInView = true;
+      this.thumbnail.Visible = true;
+      this.thumbnail.load();
+      this.disconnectIntersectionObserver();
+    }, {
+      root: null,
+      rootMargin: '900px 0px',
+      threshold: 0.01,
+    });
+    this.intersectionObserver.observe(this.container.nativeElement);
+  }
+
+  private disconnectIntersectionObserver(): void {
+    if (this.intersectionObserver) {
+      this.intersectionObserver.disconnect();
+      this.intersectionObserver = null;
     }
   }
 

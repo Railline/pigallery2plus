@@ -384,12 +384,17 @@ export class IndexingManager {
     const photoRepository = connection.getRepository(PhotoEntity);
     const videoRepository = connection.getRepository(VideoEntity);
     // save media
-    let indexedMedia = await mediaRepository
+    const indexedMedia = await mediaRepository
       .createQueryBuilder('media')
       .where('media.directory = :dir', {
         dir: parentDirId,
       })
       .getMany();
+    const indexedMediaByName = new Map<string, MediaEntity>();
+    indexedMedia.forEach((item): void => {
+      indexedMediaByName.set(item.name, item);
+    });
+    const seenMediaNames = new Set<string>();
 
     const mediaChange = {
       saveP: [] as MediaDTO[], // save/update photo
@@ -400,14 +405,8 @@ export class IndexingManager {
     const personsPerPhoto: { faces: { name: string, mediaId?: number }[]; mediaName: string }[] = [];
     // eslint-disable-next-line @typescript-eslint/prefer-for-of
     for (let i = 0; i < media.length; i++) {
-      let mediaItem: MediaDTO = null;
-      for (let j = 0; j < indexedMedia.length; j++) {
-        if (indexedMedia[j].name === media[i].name) {
-          mediaItem = indexedMedia[j];
-          indexedMedia.splice(j, 1);
-          break;
-        }
-      }
+      let mediaItem: MediaDTO = indexedMediaByName.get(media[i].name) || null;
+      seenMediaNames.add(media[i].name);
 
       const scannedFaces: { name: string }[] = (media[i].metadata as PhotoMetadata).faces || [];
       if ((media[i].metadata as PhotoMetadata).faces) {
@@ -449,34 +448,41 @@ export class IndexingManager {
       });
     }
 
-    await this.saveChunk(photoRepository, mediaChange.saveP, 100);
-    await this.saveChunk(videoRepository, mediaChange.saveV, 100);
-    await this.saveChunk(photoRepository, mediaChange.insertP, 100);
-    await this.saveChunk(videoRepository, mediaChange.insertV, 100);
+    await this.saveChunk(photoRepository, mediaChange.saveP, 500);
+    await this.saveChunk(videoRepository, mediaChange.saveV, 500);
+    await this.saveChunk(photoRepository, mediaChange.insertP, 500);
+    await this.saveChunk(videoRepository, mediaChange.insertV, 500);
 
-    indexedMedia = await mediaRepository
+    const savedMedia = await mediaRepository
       .createQueryBuilder('media')
       .where('media.directory = :dir', {
         dir: parentDirId,
       })
       .select(['media.name', 'media.id'])
       .getMany();
+    const savedMediaIdByName = new Map<string, number>();
+    savedMedia.forEach((item): void => {
+      savedMediaIdByName.set(item.name, item.id);
+    });
 
     const persons: { name: string; mediaId: number }[] = [];
     personsPerPhoto.forEach((group): void => {
-      const mIndex = indexedMedia.findIndex(
-        (m): boolean => m.name === group.mediaName
-      );
+      const mediaId = savedMediaIdByName.get(group.mediaName);
+      if (typeof mediaId === 'undefined') {
+        return;
+      }
       group.faces.forEach((sf) =>
-        (sf.mediaId = indexedMedia[mIndex].id)
+        (sf.mediaId = mediaId)
       );
 
       persons.push(...group.faces as { name: string; mediaId: number }[]);
-      indexedMedia.splice(mIndex, 1);
     });
 
     await this.savePersonsToMedia(connection, parentDirId, persons);
-    await mediaRepository.remove(indexedMedia);
+    const mediaToRemove = indexedMedia.filter((item): boolean => !seenMediaNames.has(item.name));
+    await mediaRepository.remove(mediaToRemove, {
+      chunk: Math.max(Math.ceil(mediaToRemove.length / 500), 1),
+    });
   }
 
   protected async savePersonsToMedia(
@@ -487,54 +493,64 @@ export class IndexingManager {
     const personJunctionTable = connection.getRepository(PersonJunctionTable);
     const personRepository = connection.getRepository(PersonEntry);
 
-    const persons: { name: string; mediaId: number }[] = [];
-
-    // Make a set
-    for (const face of scannedFaces) {
-      if (persons.findIndex((f) => f.name === face.name) === -1) {
-        persons.push(face);
+    const personsByName = new Map<string, { name: string; mediaId: number }>();
+    scannedFaces.forEach((face): void => {
+      if (!personsByName.has(face.name)) {
+        personsByName.set(face.name, face);
       }
-    }
+    });
+    const persons = Array.from(personsByName.values());
     await ObjectManagers.getInstance().PersonManager.saveAll(persons);
     // get saved persons without triggering denormalized data update (i.e.: do not use PersonManager.get).
     const savedPersons = await personRepository.find();
+    const savedPersonsByName = new Map<string, PersonEntry>();
+    savedPersons.forEach((person): void => {
+      savedPersonsByName.set(person.name, person);
+    });
 
     const indexedFaces = await personJunctionTable
       .createQueryBuilder('face')
-      .leftJoin('face.media', 'media')
+      .leftJoinAndSelect('face.media', 'media')
       .where('media.directory = :directory', {
         directory: parentDirId,
       })
       .leftJoinAndSelect('face.person', 'person')
       .getMany();
+    const indexedFacesByPersonAndMedia = new Map<string, PersonJunctionTable>();
+    indexedFaces.forEach((face): void => {
+      indexedFacesByPersonAndMedia.set(`${face.person.name}|${face.media.id}`, face);
+    });
+    const seenFaceKeys = new Set<string>();
 
     const faceToInsert: { person: { id: number }, media: { id: number } }[] = [];
     // eslint-disable-next-line @typescript-eslint/prefer-for-of
     for (let i = 0; i < scannedFaces.length; i++) {
       // was the Person - media connection already indexed
-      let face: PersonJunctionTable = null;
-      for (let j = 0; j < indexedFaces.length; j++) {
-        if (indexedFaces[j].person.name === scannedFaces[i].name) {
-          face = indexedFaces[j];
-          indexedFaces.splice(j, 1);
-          break; // region found, stop processing
-        }
+      const faceKey = `${scannedFaces[i].name}|${scannedFaces[i].mediaId}`;
+      if (seenFaceKeys.has(faceKey)) {
+        continue;
       }
+      const face = indexedFacesByPersonAndMedia.get(faceKey) || null;
+      seenFaceKeys.add(faceKey);
 
       if (face == null) {
+        const person = savedPersonsByName.get(scannedFaces[i].name);
+        if (!person) {
+          continue;
+        }
         faceToInsert.push({
-          person: savedPersons.find(
-            (p) => p.name === scannedFaces[i].name
-          ),
+          person,
           media: {id: scannedFaces[i].mediaId}
         });
       }
     }
     if (faceToInsert.length > 0) {
-      await this.insertChunk(personJunctionTable, faceToInsert, 100);
+      await this.insertChunk(personJunctionTable, faceToInsert, 500);
     }
-    await personJunctionTable.remove(indexedFaces, {
-      chunk: Math.max(Math.ceil(indexedFaces.length / 500), 1),
+    const facesToRemove = indexedFaces.filter((face): boolean =>
+      !seenFaceKeys.has(`${face.person.name}|${face.media.id}`));
+    await personJunctionTable.remove(facesToRemove, {
+      chunk: Math.max(Math.ceil(facesToRemove.length / 500), 1),
     });
   }
 
