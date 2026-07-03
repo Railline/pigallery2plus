@@ -516,10 +516,14 @@ export class GalleryManager {
       if (dir.directories) {
         for (const item of dir.directories) {
           if (item.cache?.valid) {
+            item.media = [];
+            item.isPartial = true;
             continue;
           }
           if (pagedMediaRequest) {
             item.cache = GalleryManager.createLightweightDirectoryCache();
+            item.media = [];
+            item.isPartial = true;
             continue;
           }
           await this.fillCacheForSubDir(connection, session, item);
