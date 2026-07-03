@@ -13,7 +13,9 @@ import {MediaDTO} from '../../../../common/entities/MediaDTO';
 import {FileDTO} from '../../../../common/entities/FileDTO';
 import {GalleryService} from './gallery.service';
 import {SearchQueryDTO} from '../../../../common/entities/SearchQueryDTO';
-import {SortingMethod} from '../../../../common/entities/SortingMethods';
+import {SortByTypes, SortingMethod} from '../../../../common/entities/SortingMethods';
+import {Utils} from '../../../../common/Utils';
+import {PhotoDTO} from '../../../../common/entities/PhotoDTO';
 
 @Injectable()
 export class ContentLoaderService implements OnDestroy {
@@ -25,8 +27,11 @@ export class ContentLoaderService implements OnDestroy {
   private pollingSub: Subscription;
   private readonly directoryInitialPageSize = 120;
   private readonly directoryPageSize = 240;
+  private readonly searchInitialPageSize = 120;
+  private readonly searchPageSize = 240;
   public lastDirectoryPageDebug = '';
   private loadingMoreDirectory = false;
+  private loadingMoreSearch = false;
   private directorySorting: SortingMethod = Config.Gallery.NavBar.SortingGrouping.defaultPhotoSortingMethod;
 
   constructor(
@@ -98,7 +103,9 @@ export class ContentLoaderService implements OnDestroy {
       return;
     }
 
-    this.setContent(ContentWrapperUtils.unpack(cw));
+    const content = ContentWrapperUtils.unpack(cw);
+    this.sortSearchPageMedia(content);
+    this.setContent(content);
   }
 
   public async loadMoreCurrentDirectory(): Promise<void> {
@@ -192,8 +199,25 @@ export class ContentLoaderService implements OnDestroy {
     return this.lastContentRequest?.type === 'directory' && page?.hasMore === true;
   }
 
+  public hasMoreCurrentSearch(): boolean {
+    const page = this.content.value?.searchResult?.mediaPage;
+    return this.lastContentRequest?.type === 'search' && page?.hasMore === true;
+  }
+
+  public hasMoreCurrentContent(): boolean {
+    return this.hasMoreCurrentDirectory() || this.hasMoreCurrentSearch();
+  }
+
   public isLoadingMoreCurrentDirectory(): boolean {
     return this.loadingMoreDirectory;
+  }
+
+  public isLoadingMoreCurrentSearch(): boolean {
+    return this.loadingMoreSearch;
+  }
+
+  public isLoadingMoreCurrentContent(): boolean {
+    return this.loadingMoreDirectory || this.loadingMoreSearch;
   }
 
   private async loadDirectoryPage(directoryName: string, offset: number, limit: number): Promise<PackedContentWrapperWithError> {
@@ -231,6 +255,10 @@ export class ContentLoaderService implements OnDestroy {
 
   public async search(query: SearchQueryDTO, forceReload = false): Promise<void> {
     const queryStr = JSON.stringify(query);
+    const sharingKey = Config.Sharing.enabled === true && this.shareService.isSharing()
+      ? this.shareService.getSharingKey()
+      : '';
+    const searchCacheScope = sharingKey ? QueryParams.gallery.sharingKey_query + '=' + sharingKey : '';
     this.ongoingContentRequest = queryStr;
     this.lastContentRequest = {type: 'search', value: queryStr};
 
@@ -238,21 +266,18 @@ export class ContentLoaderService implements OnDestroy {
       this.setContent({} as PackedContentWrapperWithError); // don't empty the page when its just a reload
     }
 
-    let cw = this.galleryCacheService.getSearch(query);
-    if (forceReload || (!cw || cw.searchResult == null)) {
-      try {
-        cw = await this.networkService.getJson<PackedContentWrapperWithError>('/search/' + encodeURIComponent(queryStr));
-        this.galleryCacheService.setSearch(cw);
-      } catch (e) {
-        cw = cw || {
-          directory: null,
-          searchResult: null
-        } as PackedContentWrapperWithError;
-        if (e.code === ErrorCodes.LocationLookUp_ERROR) {
-          cw.error = $localize`Cannot find location` + ': ' + e.message;
-        } else {
-          cw.error = $localize`Unknown server error` + ': ' + e.message;
-        }
+    let cw: PackedContentWrapperWithError;
+    try {
+      cw = await this.loadSearchPage(query, 0, this.searchInitialPageSize, searchCacheScope);
+    } catch (e) {
+      cw = {
+        directory: null,
+        searchResult: null
+      } as PackedContentWrapperWithError;
+      if (e.code === ErrorCodes.LocationLookUp_ERROR) {
+        cw.error = $localize`Cannot find location` + ': ' + e.message;
+      } else {
+        cw.error = $localize`Unknown server error` + ': ' + e.message;
       }
     }
 
@@ -263,6 +288,159 @@ export class ContentLoaderService implements OnDestroy {
     this.pollingTimerRestart.next();
 
     this.setContent(ContentWrapperUtils.unpack(cw));
+  }
+
+  public async loadMoreCurrentSearch(): Promise<void> {
+    if (this.loadingMoreSearch || this.lastContentRequest?.type !== 'search') {
+      return;
+    }
+
+    const requestQuery = this.lastContentRequest.value;
+    const current = this.content.value;
+    const page = current?.searchResult?.mediaPage;
+    if (!current?.searchResult || !page?.hasMore) {
+      return;
+    }
+
+    const offset = Math.max(
+      current.searchResult.media?.length || 0,
+      (page.offset || 0) + (page.limit || 0)
+    );
+
+    this.loadingMoreSearch = true;
+    try {
+      const cw = await this.loadSearchPage(
+        JSON.parse(requestQuery),
+        offset,
+        this.searchPageSize,
+        Config.Sharing.enabled === true && this.shareService.isSharing()
+          ? QueryParams.gallery.sharingKey_query + '=' + this.shareService.getSharingKey()
+          : ''
+      );
+      if (this.lastContentRequest?.type !== 'search' || this.lastContentRequest.value !== requestQuery) {
+        return;
+      }
+      if (!cw?.searchResult?.media?.length) {
+        return;
+      }
+
+      const nextContent = ContentWrapperUtils.unpack(cw);
+      if (!nextContent?.searchResult?.media?.length) {
+        return;
+      }
+      this.sortSearchPageMedia(nextContent);
+
+      const latest = this.content.value;
+      if (!latest?.searchResult) {
+        return;
+      }
+
+      const mediaKey = (media: MediaDTO): string =>
+        ((media.directory?.path || '') + '/' + (media.directory?.name || '') + '/' + media.name);
+      const seen = new Set((latest.searchResult.media || []).map(mediaKey));
+      const newMedia = nextContent.searchResult.media.filter((media) => {
+        const key = mediaKey(media);
+        if (seen.has(key)) {
+          return false;
+        }
+        seen.add(key);
+        return true;
+      });
+      if (newMedia.length === 0) {
+        this.content.next({
+          ...latest,
+          searchResult: {
+            ...latest.searchResult,
+            mediaPage: {
+              ...(nextContent.searchResult.mediaPage || page),
+              hasMore: false,
+            },
+          },
+        });
+        return;
+      }
+
+      this.content.next({
+        ...latest,
+        searchResult: {
+          ...latest.searchResult,
+          media: (latest.searchResult.media || []).concat(newMedia),
+          mediaPage: nextContent.searchResult.mediaPage,
+          resultOverflow: false,
+        },
+      });
+    } finally {
+      this.loadingMoreSearch = false;
+    }
+  }
+
+  public async loadMoreCurrentContent(): Promise<void> {
+    if (this.lastContentRequest?.type === 'directory') {
+      return this.loadMoreCurrentDirectory();
+    }
+    if (this.lastContentRequest?.type === 'search') {
+      return this.loadMoreCurrentSearch();
+    }
+  }
+
+  private async loadSearchPage(
+      query: SearchQueryDTO,
+      offset: number,
+      limit: number,
+      searchCacheScope: string
+  ): Promise<PackedContentWrapperWithError> {
+    const queryStr = JSON.stringify(query);
+    const params: { [key: string]: unknown } = {
+      [QueryParams.gallery.mediaOffset]: offset,
+      [QueryParams.gallery.mediaLimit]: limit,
+    };
+    if (Config.Sharing.enabled === true && this.shareService.isSharing()) {
+      params[QueryParams.gallery.sharingKey_query] = this.shareService.getSharingKey();
+    }
+
+    const cw = await this.networkService.getJson<PackedContentWrapperWithError>(
+      '/search/' + encodeURIComponent(queryStr),
+      params
+    );
+    if (!cw?.searchResult?.mediaPage && offset === 0) {
+      this.galleryCacheService.setSearch(cw, searchCacheScope);
+    }
+    return cw;
+  }
+
+  private sortSearchPageMedia(cw: ContentWrapperWithError): void {
+    const media = cw?.searchResult?.media;
+    if (!media?.length) {
+      return;
+    }
+    const sorting = Config.Gallery.NavBar.SortingGrouping.defaultSearchSortingMethod;
+    switch (sorting.method) {
+      case SortByTypes.Name:
+        media.sort((a: MediaDTO, b: MediaDTO) =>
+          Utils.sortableFilename(a.name).localeCompare(Utils.sortableFilename(b.name))
+        );
+        break;
+      case SortByTypes.Rating:
+        media.sort((a: PhotoDTO, b: PhotoDTO) => (a.metadata?.rating || 0) - (b.metadata?.rating || 0));
+        break;
+      case SortByTypes.FileSize:
+        media.sort((a: PhotoDTO, b: PhotoDTO) => (a.metadata?.fileSize || 0) - (b.metadata?.fileSize || 0));
+        break;
+      case SortByTypes.PersonCount:
+        media.sort((a: PhotoDTO, b: PhotoDTO) => (a.metadata?.faces?.length || 0) - (b.metadata?.faces?.length || 0));
+        break;
+      case SortByTypes.Date:
+      case SortByTypes.Random:
+      default:
+        media.sort((a: PhotoDTO, b: PhotoDTO) =>
+          Utils.getTimeMS(a.metadata.creationDate, a.metadata.creationDateOffset, Config.Gallery.ignoreTimestampOffset) -
+          Utils.getTimeMS(b.metadata.creationDate, b.metadata.creationDateOffset, Config.Gallery.ignoreTimestampOffset)
+        );
+        break;
+    }
+    if (!sorting.ascending) {
+      media.reverse();
+    }
   }
 
   isSearchResult(): boolean {

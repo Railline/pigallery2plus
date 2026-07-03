@@ -219,13 +219,16 @@ export class GalleryCacheService {
 
   public getAutoComplete(
       text: string,
-      type: SearchQueryTypes
+      type: SearchQueryTypes,
+      scope = ''
   ): IAutoCompleteItem[] {
     if (Config.Gallery.enableCache === false) {
       return null;
     }
     const key =
         GalleryCacheService.AUTO_COMPLETE_PREFIX +
+        scope +
+        ':' +
         text +
         (type ? '_' + type : '');
     const tmp = localStorage.getItem(key);
@@ -246,13 +249,16 @@ export class GalleryCacheService {
   public setAutoComplete(
       text: string,
       type: SearchQueryTypes,
-      items: Array<IAutoCompleteItem>
+      items: Array<IAutoCompleteItem>,
+      scope = ''
   ): void {
     if (Config.Gallery.enableCache === false) {
       return;
     }
     const key =
         GalleryCacheService.AUTO_COMPLETE_PREFIX +
+        scope +
+        ':' +
         text +
         (type ? '_' + type : '');
     const tmp: CacheItem<Array<IAutoCompleteItem>> = {
@@ -267,18 +273,22 @@ export class GalleryCacheService {
     }
   }
 
-  public getSearch(query: SearchQueryDTO): PackedContentWrapperWithError {
+  private getSearchCacheKey(query: SearchQueryDTO, scope = ''): string {
+    return GalleryCacheService.SEARCH_PREFIX + scope + ':' + JSON.stringify(query);
+  }
+
+  public getSearch(query: SearchQueryDTO, scope = ''): PackedContentWrapperWithError {
     if (Config.Gallery.enableCache === false) {
       return null;
     }
     if (typeof query === 'string') {
       throw new Error('query expected to by object. Got:' + query);
     }
-    const key = GalleryCacheService.SEARCH_PREFIX + JSON.stringify(query);
+    const key = this.getSearchCacheKey(query, scope);
     return GalleryCacheService.loadCacheItem(key);
   }
 
-  public setSearch(cw: PackedContentWrapperWithError): void {
+  public setSearch(cw: PackedContentWrapperWithError, scope = ''): void {
     if (Config.Gallery.enableCache === false) {
       return;
     }
@@ -286,7 +296,7 @@ export class GalleryCacheService {
       timestamp: Date.now(),
       item: cw,
     };
-    const key = GalleryCacheService.SEARCH_PREFIX + JSON.stringify(cw.searchResult.searchQuery);
+    const key = this.getSearchCacheKey(cw.searchResult.searchQuery, scope);
     try {
       localStorage.setItem(key, JSON.stringify(tmp));
     } catch (e) {

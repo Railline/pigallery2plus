@@ -263,7 +263,7 @@ export class ThumbnailGeneratorMWs {
       return cached.exists;
     }
 
-    const exists = fs.existsSync(thPath);
+    const exists = fs.existsSync(thPath) && !PhotoProcessing.isRegenerableFailedThumbnail(thPath);
     ThumbnailGeneratorMWs.thumbnailExistenceCache.set(thPath, {
       exists,
       expires: now + (exists ?

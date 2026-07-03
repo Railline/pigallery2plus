@@ -21,6 +21,35 @@ import {SortByTypes} from '../../../common/entities/SortingMethods';
 const LOG_TAG = '[GalleryManager]';
 
 export class GalleryManager {
+  private static readonly backgroundIndexing = new Set<string>();
+
+  private static createLightweightDirectoryCache(): any {
+    return {
+      mediaCount: 0,
+      recursiveMediaCount: 0,
+      oldestMedia: null,
+      youngestMedia: null,
+      cover: null,
+      valid: false,
+    };
+  }
+
+  private static scheduleBackgroundIndex(relativeDirectoryName: string, reason: string): void {
+    if (GalleryManager.backgroundIndexing.has(relativeDirectoryName)) {
+      return;
+    }
+    GalleryManager.backgroundIndexing.add(relativeDirectoryName);
+    Logger.info(LOG_TAG, `Scheduling background indexing for ${relativeDirectoryName}: ${reason}`);
+    ObjectManagers.getInstance()
+      .IndexingManager.indexDirectory(relativeDirectoryName)
+      .catch((err): void => {
+        Logger.error(LOG_TAG, `Background indexing failed for ${relativeDirectoryName}: ` + err);
+      })
+      .finally((): void => {
+        GalleryManager.backgroundIndexing.delete(relativeDirectoryName);
+      });
+  }
+
   public static parseRelativeDirPath(relativeDirectoryName: string): {
     name: string;
     parent: string;
@@ -44,6 +73,7 @@ export class GalleryManager {
     mediaSortMethod?: number,
     mediaSortAscending = true
   ): Promise<ParentDirectoryDTO> {
+    const pagedMediaRequest = Number.isFinite(mediaLimit) && mediaLimit > 0;
     const directoryPath = GalleryManager.parseRelativeDirPath(
       relativeDirectoryName
     );
@@ -95,6 +125,10 @@ export class GalleryManager {
 
       if (dir.lastModified !== lastModified) {
         Logger.silly(LOG_TAG, 'Reindexing reason: lastModified mismatch: known: ' + dir.lastModified + ', current:' + lastModified);
+        if (pagedMediaRequest) {
+          GalleryManager.scheduleBackgroundIndex(relativeDirectoryName, 'lastModified mismatch');
+          return await this.getParentDirFromId(connection, session, dir.id, mediaOffset, mediaLimit, mediaSortMethod, mediaSortAscending);
+        }
         // Need to wait for save, then return a DB-based result with projection
         await ObjectManagers.getInstance().IndexingManager.indexDirectory(relativeDirectoryName, true);
         return await this.getParentDirFromId(connection, session, dir.id, mediaOffset, mediaLimit, mediaSortMethod, mediaSortAscending);
@@ -110,9 +144,7 @@ export class GalleryManager {
         // on the fly reindexing
         Logger.silly(LOG_TAG, 'lazy reindexing reason: cache timeout: lastScanned: ' + (Date.now() - dir.lastScanned) +
           'ms ago, cachedFolderTimeout:' + Config.Indexing.cachedFolderTimeout);
-        ObjectManagers.getInstance()
-          .IndexingManager.indexDirectory(relativeDirectoryName)
-          .catch(console.error);
+        GalleryManager.scheduleBackgroundIndex(relativeDirectoryName, 'cache timeout');
       }
       return await this.getParentDirFromId(connection, session, dir.id, mediaOffset, mediaLimit, mediaSortMethod, mediaSortAscending);
     }
@@ -414,6 +446,16 @@ export class GalleryManager {
     mediaSortMethod?: number,
     mediaSortAscending = true
   ): Promise<ParentDirectoryDTO> {
+    const startedAt = Date.now();
+    const timings: {[key: string]: number} = {};
+    const offset = Number.isFinite(mediaOffset) && mediaOffset > 0 ? mediaOffset : 0;
+    const limit = Number.isFinite(mediaLimit) && mediaLimit > 0 ? Math.min(mediaLimit, 1000) : null;
+    const pagedMediaRequest = limit !== null;
+    const markTiming = (name: string, since: number): void => {
+      if (pagedMediaRequest) {
+        timings[name] = Date.now() - since;
+      }
+    };
 
     const query = connection
       .getRepository(DirectoryEntity)
@@ -425,12 +467,20 @@ export class GalleryManager {
 
 
     try {
+      let t = Date.now();
       const dir = await query.getOne();
+      markTiming('directory', t);
 
-      if (!dir.cache?.valid) {
+      t = Date.now();
+      if (!dir.cache?.valid && !pagedMediaRequest) {
         dir.cache = await ObjectManagers.getInstance().ProjectedCacheManager.setAndGetCacheForDirectory(connection, session, dir);
       }
+      if (!dir.cache?.valid && pagedMediaRequest) {
+        dir.cache = GalleryManager.createLightweightDirectoryCache();
+      }
+      markTiming('cache', t);
 
+      t = Date.now();
       const dirQuery = connection
         .getRepository(DirectoryEntity)
         .createQueryBuilder('directories')
@@ -458,14 +508,24 @@ export class GalleryManager {
       }
 
       dir.directories = await dirQuery.getMany();
+      markTiming('children', t);
 
 
 
+      t = Date.now();
       if (dir.directories) {
         for (const item of dir.directories) {
+          if (item.cache?.valid) {
+            continue;
+          }
+          if (pagedMediaRequest) {
+            item.cache = GalleryManager.createLightweightDirectoryCache();
+            continue;
+          }
           await this.fillCacheForSubDir(connection, session, item);
         }
       }
+      markTiming('childrenCache', t);
 
       const mQuery = connection.getRepository(MediaEntity)
         .createQueryBuilder('media')
@@ -476,9 +536,13 @@ export class GalleryManager {
       if (session.projectionQuery) {
         mQuery.andWhere(session.projectionQuery);
       }
+      t = Date.now();
       const totalMediaCount = await mQuery.getCount();
-      const offset = Number.isFinite(mediaOffset) && mediaOffset > 0 ? mediaOffset : 0;
-      const limit = Number.isFinite(mediaLimit) && mediaLimit > 0 ? Math.min(mediaLimit, 1000) : null;
+      markTiming('mediaCount', t);
+      if (dir.cache && pagedMediaRequest) {
+        dir.cache.mediaCount = totalMediaCount;
+        dir.cache.recursiveMediaCount = Math.max(dir.cache.recursiveMediaCount || 0, totalMediaCount);
+      }
       if (limit !== null) {
         const sortDirection = mediaSortAscending ? 'ASC' : 'DESC';
         switch (mediaSortMethod) {
@@ -503,7 +567,9 @@ export class GalleryManager {
           .skip(offset)
           .take(limit);
       }
+      t = Date.now();
       dir.media = await mQuery.getMany();
+      markTiming('mediaPage', t);
       if (limit !== null) {
         (dir as ParentDirectoryDTO).mediaPage = {
           offset,
@@ -519,12 +585,27 @@ export class GalleryManager {
         Config.MetaFile.pg2conf === true ||
         Config.MetaFile.markdown === true
       ) {
+        const t = Date.now();
         const metaFileQuery = connection
           .getRepository(FileEntity)
           .createQueryBuilder('metaFile')
           .where('metaFile.directory = :id', {id: partialDirId});
 
         dir.metaFile = await metaFileQuery.getMany();
+        markTiming('metaFiles', t);
+      }
+
+      const totalMs = Date.now() - startedAt;
+      if (pagedMediaRequest && totalMs > 1000) {
+        Logger.info(
+          LOG_TAG,
+          'Paged directory load slow',
+          `dirId=${partialDirId}`,
+          `offset=${offset}`,
+          `limit=${limit}`,
+          `totalMs=${totalMs}`,
+          `timings=${JSON.stringify(timings)}`
+        );
       }
 
       return dir;

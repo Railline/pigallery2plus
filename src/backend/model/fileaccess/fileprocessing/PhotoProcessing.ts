@@ -1,5 +1,5 @@
 import * as path from 'path';
-import {constants as fsConstants, promises as fsp} from 'fs';
+import {constants as fsConstants, existsSync, promises as fsp, readFileSync} from 'fs';
 import * as os from 'os';
 import * as crypto from 'crypto';
 import {ProjectPath} from '../../../ProjectPath';
@@ -10,12 +10,15 @@ import {FaceRegion, PhotoDTO} from '../../../../common/entities/PhotoDTO';
 import {SupportedFormats} from '../../../../common/SupportedFormats';
 import {PersonEntry} from '../../database/enitites/person/PersonEntry';
 import {SVGIconConfig} from '../../../../common/config/public/ClientConfig';
+import {Logger} from '../../../Logger';
 
 export class PhotoProcessing {
   private static initDone = false;
   private static taskQue: ITaskExecuter<MediaRendererInput | SvgRendererInput, void> = null;
   private static readonly CONVERTED_EXTENSION = '.webp';
   private static readonly thumbnailGenerationInFlight = new Map<string, Promise<string>>();
+  private static readonly failureMarkerExtension = '.failed.json';
+  private static readonly failedThumbnailLog = new Set<string>();
 
   public static init(): void {
     if (this.initDone === true) {
@@ -123,6 +126,86 @@ export class PhotoProcessing {
       (animated ? 'anim' : '') +
       (Config.Media.Photo.smartSubsample ? 'cs' : '') +
       PhotoProcessing.CONVERTED_EXTENSION
+    );
+  }
+
+  private static generateFailureMarkerPath(outPath: string): string {
+    return outPath + PhotoProcessing.failureMarkerExtension;
+  }
+
+  private static isPermanentThumbnailError(error: unknown): boolean {
+    const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+    return message.indexOf('unsupported image format') !== -1 ||
+      message.indexOf('invalid image') !== -1 ||
+      message.indexOf('corrupt') !== -1 ||
+      message.indexOf('vips') !== -1;
+  }
+
+  public static isRegenerableFailedThumbnail(outPath: string): boolean {
+    const markerPath = PhotoProcessing.generateFailureMarkerPath(outPath);
+    if (!existsSync(markerPath)) {
+      return false;
+    }
+    try {
+      const marker = JSON.parse(readFileSync(markerPath, 'utf8')) as { reason?: string };
+      return (marker.reason || '').toLowerCase().indexOf('input image exceeds pixel limit') !== -1;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  private static async removeRegenerableFailedThumbnail(outPath: string): Promise<void> {
+    if (!PhotoProcessing.isRegenerableFailedThumbnail(outPath)) {
+      return;
+    }
+    await Promise.all([
+      fsp.unlink(outPath).catch((): undefined => undefined),
+      fsp.unlink(PhotoProcessing.generateFailureMarkerPath(outPath)).catch((): undefined => undefined),
+    ]);
+  }
+
+  private static async writeFailedThumbnailPlaceholder(
+    input: MediaRendererInput,
+    outPath: string,
+    error: unknown
+  ): Promise<void> {
+    const safeMessage = (error instanceof Error ? error.message : String(error))
+      .replace(/[<>&"']/g, ' ')
+      .substring(0, 180);
+    if (!PhotoProcessing.failedThumbnailLog.has(outPath)) {
+      PhotoProcessing.failedThumbnailLog.add(outPath);
+      Logger.warn(
+        '[PhotoProcessing]',
+        'Using fallback thumbnail for unsupported media: ' + input.mediaPath + ' (' + safeMessage + ')'
+      );
+    }
+    const svgString =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">' +
+      '<rect width="100%" height="100%" fill="#1f2328"/>' +
+      '<path d="M34 38h188v142H34z" fill="none" stroke="#8b949e" stroke-width="6"/>' +
+      '<path d="M54 156l38-46 28 32 22-26 44 40" fill="none" stroke="#8b949e" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<circle cx="194" cy="66" r="14" fill="#8b949e"/>' +
+      '<text x="50%" y="230" text-anchor="middle" fill="#c9d1d9" font-family="Arial, sans-serif" font-size="14">thumbnail unavailable</text>' +
+      '</svg>';
+    const marker = {
+      mediaPath: input.mediaPath,
+      outPath,
+      created: Date.now(),
+      reason: safeMessage,
+    };
+    await fsp.mkdir(path.dirname(outPath), {recursive: true});
+    await this.taskQue.execute({
+      type: ThumbnailSourceType.Photo,
+      svgString,
+      size: input.size,
+      outPath,
+      makeSquare: true,
+      useLanczos3: input.useLanczos3,
+      quality: input.quality,
+    } as SvgRendererInput);
+    await fsp.writeFile(
+      PhotoProcessing.generateFailureMarkerPath(outPath),
+      JSON.stringify(marker, null, 2)
     );
   }
 
@@ -248,6 +331,8 @@ export class PhotoProcessing {
     // generate thumbnail path
     const outPath = PhotoProcessing.generateConvertedPath(mediaPath, size);
 
+    await PhotoProcessing.removeRegenerableFailedThumbnail(outPath);
+
     // check if file already exist
     try {
       await fsp.access(outPath, fsConstants.R_OK);
@@ -299,7 +384,14 @@ export class PhotoProcessing {
 
     const generation = (async (): Promise<string> => {
       await fsp.mkdir(outDir, {recursive: true});
-      await this.taskQue.execute(input);
+      try {
+        await this.taskQue.execute(input);
+      } catch (error) {
+        if (sourceType !== ThumbnailSourceType.Photo || !PhotoProcessing.isPermanentThumbnailError(error)) {
+          throw error;
+        }
+        await PhotoProcessing.writeFailedThumbnailPlaceholder(input, outPath, error);
+      }
       return outPath;
     })();
     PhotoProcessing.thumbnailGenerationInFlight.set(outPath, generation);

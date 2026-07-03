@@ -185,7 +185,7 @@ export class GalleryNavigatorComponent {
     return c?.directory
       ? c?.directory.cache?.mediaCount
       : c?.searchResult
-        ? c?.searchResult?.media?.length
+        ? c?.searchResult?.mediaPage?.total || c?.searchResult?.media?.length
         : 0;
   }
 

@@ -433,9 +433,18 @@ export class GalleryMWs {
       }
 
       const query: SearchQueryDTO = req.resultPipe as any;
+      const mediaOffset = parseInt(req.query[QueryParams.gallery.mediaOffset] as string, 10);
+      const mediaLimit = parseInt(req.query[QueryParams.gallery.mediaLimit] as string, 10);
+      const paging = Number.isFinite(mediaLimit) && mediaLimit > 0
+        ? {
+          offset: Number.isFinite(mediaOffset) && mediaOffset > 0 ? mediaOffset : 0,
+          limit: Math.min(mediaLimit, Math.max(Config.Search.maxMediaResult, mediaLimit)),
+        }
+        : undefined;
       const result = await ObjectManagers.getInstance().SearchManager.search(
         req.session.context,
-        query
+        query,
+        paging
       );
 
       result.directories.forEach(

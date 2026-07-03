@@ -238,6 +238,38 @@ export class GallerySortingService {
     return () => '';
   }
 
+  private isPagedSearchContent(dirContent: DirectoryContent): boolean {
+    return !!(dirContent as DirectoryContent & { searchQuery?: unknown; mediaPage?: unknown }).searchQuery &&
+      !!(dirContent as DirectoryContent & { searchQuery?: unknown; mediaPage?: unknown }).mediaPage;
+  }
+
+  private buildServerOrderedMediaGroups(dirContent: DirectoryContent, grouping: GroupingMethod): MediaGroup[] {
+    if (!dirContent.media) {
+      return [];
+    }
+
+    const groupFN = grouping.method === GroupByTypes.NoGrouping
+      ? (() => '')
+      : this.getGroupByNameFn(grouping);
+    const mediaGroups: MediaGroup[] = [];
+
+    for (const media of dirContent.media) {
+      const groupName = groupFN(media);
+      if (mediaGroups.length === 0 || mediaGroups[mediaGroups.length - 1].name !== groupName) {
+        mediaGroups.push({name: groupName, media: []});
+      }
+      mediaGroups[mediaGroups.length - 1].media.push(media);
+    }
+
+    if (grouping.method === GroupByTypes.Date) {
+      mediaGroups.forEach(g => {
+        g.date = Utils.makeUTCMidnight(new Date(g.media?.[0]?.metadata?.creationDate), g.media?.[0]?.metadata?.creationDateOffset);
+      });
+    }
+
+    return mediaGroups;
+  }
+
   public applySorting(
     directoryContent: Observable<DirectoryContent>
   ): Observable<GroupedDirectoryContent> {
@@ -294,6 +326,11 @@ export class GallerySortingService {
 
                 // group
                 if (dirContent.media) {
+                  if (this.isPagedSearchContent(dirContent)) {
+                    c.mediaGroups = this.buildServerOrderedMediaGroups(dirContent, grouping);
+                    return c;
+                  }
+
                   const mCopy = dirContent.media.slice();
                   this.sortMedia(grouping, mCopy);
                   const groupFN = this.getGroupByNameFn(grouping);

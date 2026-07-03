@@ -7,6 +7,8 @@ import {BehaviorSubject} from 'rxjs';
 import {SearchQueryTypes, TextSearchQueryTypes,} from '../../../../../common/entities/SearchQueryDTO';
 import {QueryParams} from '../../../../../common/QueryParams';
 import {defaultQueryKeywords, SearchQueryParser} from '../../../../../common/SearchQueryParser';
+import {ShareService} from '../share.service';
+import {Config} from '../../../../../common/config/public/Config';
 
 @Injectable()
 export class AutoCompleteService {
@@ -17,7 +19,8 @@ export class AutoCompleteService {
   constructor(
     private networkService: NetworkService,
     private searchQueryParserService: SearchQueryParserService,
-    private galleryCacheService: GalleryCacheService
+    private galleryCacheService: GalleryCacheService,
+    private shareService: ShareService
   ) {
     this.keywords = Object.values(defaultQueryKeywords)
       .filter(
@@ -152,17 +155,24 @@ export class AutoCompleteService {
   ): BehaviorSubject<RenderableAutoCompleteItem[]> {
     items = items || new BehaviorSubject([]);
 
-    const cached = this.galleryCacheService.getAutoComplete(text, type);
+    const sharingKey = Config.Sharing.enabled === true && this.shareService.isSharing()
+      ? this.shareService.getSharingKey()
+      : '';
+    const cacheScope = sharingKey ? QueryParams.gallery.sharingKey_query + '=' + sharingKey : '';
+    const cached = this.galleryCacheService.getAutoComplete(text, type, cacheScope);
     try {
       if (cached == null) {
         const acParams: any = {};
         if (type) {
           acParams[QueryParams.gallery.search.type] = type;
         }
+        if (sharingKey) {
+          acParams[QueryParams.gallery.sharingKey_query] = sharingKey;
+        }
         this.networkService
           .getJson<IAutoCompleteItem[]>('/autocomplete/' + encodeURIComponent(text), acParams)
           .then((ret) => {
-            this.galleryCacheService.setAutoComplete(text, type, ret);
+            this.galleryCacheService.setAutoComplete(text, type, ret, cacheScope);
             items.next(
               this.sortResults(
                 fullText,

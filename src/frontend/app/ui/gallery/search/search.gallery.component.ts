@@ -19,6 +19,7 @@ import {GallerySearchQueryBuilderComponent} from './query-builder/query-bulder.g
 import {NgIf} from '@angular/common';
 import {SavedSearchPopupComponent} from '../../albums/saved-search-popup/saved-search-popup.component';
 import {SearchQueryUtils} from '../../../../../common/SearchQueryUtils';
+import {ShareService} from '../share.service';
 
 @Component({
   selector: 'app-gallery-search',
@@ -57,7 +58,8 @@ export class GallerySearchComponent implements OnDestroy {
     private route: ActivatedRoute,
     public router: Router,
     private modalService: BsModalService,
-    public authenticationService: AuthenticationService
+    public authenticationService: AuthenticationService,
+    private shareService: ShareService
   ) {
     this.SearchQueryTypes = SearchQueryTypes;
     this.MetadataSearchQueryTypes = MetadataSearchQueryTypes.map((v) => ({
@@ -140,8 +142,12 @@ export class GallerySearchComponent implements OnDestroy {
 
   Search(closeModal = false): void {
     this.validateRawSearchText();
+    const queryParams: { [key: string]: string } = {};
+    if (Config.Sharing.enabled === true && this.shareService.isSharing()) {
+      queryParams[QueryParams.gallery.sharingKey_query] = this.shareService.getSharingKey();
+    }
     this.router
-      .navigate(['/search', this.HTMLSearchQuery])
+      .navigate(['/search', this.HTMLSearchQuery], {queryParams})
       .then(() => {
         if (closeModal && this.searchModalRef) {
           this.hideSearchModal();
@@ -158,5 +164,4 @@ export class GallerySearchComponent implements OnDestroy {
     this.hideSaveSearchModal();
   }
 }
-
 

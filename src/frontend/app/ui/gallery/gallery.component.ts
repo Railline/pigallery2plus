@@ -296,7 +296,10 @@ export class GalleryComponent implements OnInit, OnDestroy {
 
     this.directoryContent = content;
     this.currentFeedKey = feedKey;
-    this.totalMediaCount = this.contentLoader.content.value?.directory?.mediaPage?.total || loadedMediaCount;
+    this.totalMediaCount =
+      this.contentLoader.content.value?.directory?.mediaPage?.total ||
+      this.contentLoader.content.value?.searchResult?.mediaPage?.total ||
+      loadedMediaCount;
     const requestedPhoto = this.route.snapshot.queryParams[QueryParams.gallery.photo];
     const isDirectoryContent = !!this.contentLoader.content.value?.directory;
     if (requestedPhoto && isDirectoryContent && !this.hasLoadedMedia(requestedPhoto, content.mediaGroups)) {
@@ -309,7 +312,7 @@ export class GalleryComponent implements OnInit, OnDestroy {
     if (feedChanged || previousLoadedMediaCount === 0) {
       this.visibleMediaCount = Math.min(this.feedInitialMediaCount, loadedMediaCount);
     } else if (loadedMediaCount > previousLoadedMediaCount) {
-      this.visibleMediaCount = Math.min(loadedMediaCount, previousVisibleMediaCount + this.feedBatchMediaCount);
+      this.visibleMediaCount = Math.min(previousVisibleMediaCount, loadedMediaCount);
     } else {
       this.visibleMediaCount = Math.min(previousVisibleMediaCount, loadedMediaCount);
     }
@@ -324,7 +327,7 @@ export class GalleryComponent implements OnInit, OnDestroy {
     this.scheduleLoadMoreIfNeeded();
   };
 
-  private scheduleLoadMoreIfNeeded(): void {
+  private scheduleLoadMoreIfNeeded(delay = 0): void {
     if (this.autoLoadMoreScheduled) {
       return;
     }
@@ -332,7 +335,7 @@ export class GalleryComponent implements OnInit, OnDestroy {
     window.setTimeout(() => {
       this.autoLoadMoreScheduled = false;
       this.loadMoreIfNearEnd();
-    }, 0);
+    }, delay);
   }
 
   private loadMoreIfNearEnd(): void {
@@ -342,11 +345,29 @@ export class GalleryComponent implements OnInit, OnDestroy {
     if (!this.isNearFeedEnd()) {
       return;
     }
-    if (this.visibleMediaCount < this.countMedia(this.directoryContent.mediaGroups)) {
-      this.extendVisibleMedia();
+    const loadedMediaCount = this.countMedia(this.directoryContent.mediaGroups);
+    const renderedMediaCount = this.getRenderedMediaCount();
+    const expectedRenderedMediaCount = Math.min(this.visibleMediaCount, loadedMediaCount);
+    if (renderedMediaCount < expectedRenderedMediaCount) {
+      this.grid?.onScroll();
+      this.scheduleLoadMoreIfNeeded(100);
       return;
     }
-    this.contentLoader.loadMoreCurrentDirectory().catch(console.error);
+    if (this.visibleMediaCount < loadedMediaCount) {
+      this.extendVisibleMedia();
+      window.setTimeout(() => this.grid?.onScroll(), 0);
+      return;
+    }
+    if (this.contentLoader.hasMoreCurrentContent() && !this.contentLoader.isLoadingMoreCurrentContent()) {
+      const scrollPosition = PageHelper.ScrollY;
+      this.contentLoader.loadMoreCurrentContent()
+        .then(() => {
+          window.setTimeout(() => {
+            PageHelper.ScrollY = Math.min(scrollPosition, PageHelper.MaxScrollY);
+          }, 0);
+        })
+        .catch(console.error);
+    }
   }
 
   private isNearFeedEnd(): boolean {
@@ -358,8 +379,10 @@ export class GalleryComponent implements OnInit, OnDestroy {
   }
 
   private extendVisibleMedia(): void {
+    const loadedMediaCount = this.countMedia(this.directoryContent?.mediaGroups);
     const nextLimit = Math.min(
       this.visibleMediaCount + this.feedBatchMediaCount,
+      loadedMediaCount,
       this.totalMediaCount
     );
     if (nextLimit === this.visibleMediaCount) {
@@ -368,6 +391,10 @@ export class GalleryComponent implements OnInit, OnDestroy {
     this.visibleMediaCount = nextLimit;
     this.updateVisibleDirectoryContent();
     this.updateFeedDebug('extend visible=' + this.visibleMediaCount);
+  }
+
+  private getRenderedMediaCount(): number {
+    return this.grid?.getNumberOfRenderedMedia() || 0;
   }
 
   private getCurrentFeedKey(): string {

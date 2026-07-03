@@ -131,9 +131,10 @@ export class VideoRendererFactory {
 }
 
 export class ImageRendererFactory {
+  private static readonly defaultMaxInputPixels = 512 * 1024 * 1024;
   private static readonly maxInputPixels = Math.max(
     1,
-    Number(process.env.PIGALLERY_SHARP_LIMIT_INPUT_PIXELS || 8000 * 8000)
+    Number(process.env.PIGALLERY_SHARP_LIMIT_INPUT_PIXELS || ImageRendererFactory.defaultMaxInputPixels)
   );
 
   @ExtensionDecorator(e => e.gallery.ImageRenderer.render)
@@ -149,8 +150,9 @@ export class ImageRendererFactory {
       );
       image = sharp((input as MediaRendererInput).mediaPath, {
         failOnError: false,
+        ...((input as MediaRendererInput).sharpOptions || {}),
         limitInputPixels: ImageRendererFactory.maxInputPixels,
-        animated: (input as MediaRendererInput).animate, ...((input as MediaRendererInput).sharpOptions || {})
+        animated: (input as MediaRendererInput).animate
       });
     } else {
       const svg_buffer = Buffer.from((input as SvgRendererInput).svgString);
@@ -192,7 +194,9 @@ export class ImageRendererFactory {
       });
     } else {
       if ((input as SvgRendererInput).svgString) {
-        processedImg = image.png({effort: 6, quality: input.quality});
+        processedImg = path.extname(input.outPath || '').toLowerCase() === '.webp'
+          ? image.webp({effort: 6, quality: input.quality})
+          : image.png({effort: 6, quality: input.quality});
       }
     }
     // do not save to file

@@ -42,7 +42,7 @@
     <ng-container *ngIf="!ContentWrapper.error && (ContentWrapper.searchResult || ContentWrapper.directory)">
       <!-- Show search result overflow -->
       <div class="alert alert-info" role="alert"
-           *ngIf="ContentWrapper.searchResult && ContentWrapper.searchResult.resultOverflow == true" i18n>
+           *ngIf="ContentWrapper.searchResult && ContentWrapper.searchResult.resultOverflow == true && !ContentWrapper.searchResult.mediaPage" i18n>
         Too many results to show. Refine your search.
       </div>
 
