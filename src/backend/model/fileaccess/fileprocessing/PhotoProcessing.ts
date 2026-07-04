@@ -476,6 +476,78 @@ export class PhotoProcessing {
     return SupportedFormats.WithDots.Photos.indexOf(extension) !== -1;
   }
 
+  public static async hasValidPhotoSignature(fullPath: string): Promise<boolean> {
+    const extension = path.extname(fullPath).toLowerCase();
+    if (SupportedFormats.WithDots.Photos.indexOf(extension) === -1) {
+      return false;
+    }
+
+    let header: Buffer;
+    try {
+      const file = await fsp.open(fullPath, 'r');
+      try {
+        header = Buffer.alloc(64);
+        const read = await file.read(header, 0, header.length, 0);
+        header = header.subarray(0, read.bytesRead);
+      } finally {
+        await file.close();
+      }
+    } catch (e) {
+      return false;
+    }
+
+    if (header.length === 0) {
+      return false;
+    }
+
+    switch (extension) {
+      case '.jpg':
+      case '.jpeg':
+      case '.jpe':
+        return header.length >= 3 &&
+          header[0] === 0xff &&
+          header[1] === 0xd8 &&
+          header[2] === 0xff;
+      case '.png':
+        return header.length >= 8 &&
+          header[0] === 0x89 &&
+          header[1] === 0x50 &&
+          header[2] === 0x4e &&
+          header[3] === 0x47 &&
+          header[4] === 0x0d &&
+          header[5] === 0x0a &&
+          header[6] === 0x1a &&
+          header[7] === 0x0a;
+      case '.gif':
+        return header.subarray(0, 6).toString('ascii') === 'GIF87a' ||
+          header.subarray(0, 6).toString('ascii') === 'GIF89a';
+      case '.webp':
+        return header.length >= 12 &&
+          header.subarray(0, 4).toString('ascii') === 'RIFF' &&
+          header.subarray(8, 12).toString('ascii') === 'WEBP';
+      case '.avif':
+      case '.heic': {
+        if (header.length < 12 || header.subarray(4, 8).toString('ascii') !== 'ftyp') {
+          return false;
+        }
+        const brand = header.subarray(8, 12).toString('ascii');
+        return ['avif', 'avis', 'heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1'].indexOf(brand) !== -1;
+      }
+      case '.tiff':
+      case '.dng':
+      case '.arw':
+        return header.length >= 4 &&
+          ((header[0] === 0x49 && header[1] === 0x49 && header[2] === 0x2a && header[3] === 0x00) ||
+            (header[0] === 0x4d && header[1] === 0x4d && header[2] === 0x00 && header[3] === 0x2a));
+      case '.svg': {
+        const text = header.toString('utf8').replace(/^\uFEFF/, '').trimStart().toLowerCase();
+        return text.startsWith('<svg') || text.startsWith('<?xml');
+      }
+      default:
+        return true;
+    }
+  }
+
   public static async renderSVG(
     svgIcon: SVGIconConfig,
     outPath: string,

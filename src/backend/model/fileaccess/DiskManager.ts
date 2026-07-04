@@ -274,6 +274,13 @@ export class DiskManager {
           if (settings.noPhoto === true) {
             return {};
           }
+          if ((await PhotoProcessing.hasValidPhotoSignature(fullFilePath)) !== true) {
+            Logger.warn(
+              LOG_TAG,
+              'Invalid image signature, skipping: ' + fullFilePath
+            );
+            return {};
+          }
 
           return {
             media: {
