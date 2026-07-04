@@ -135,10 +135,18 @@ export class PhotoProcessing {
 
   private static isPermanentThumbnailError(error: unknown): boolean {
     const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+    if (PhotoProcessing.isPixelLimitError(error)) {
+      return false;
+    }
     return message.indexOf('unsupported image format') !== -1 ||
       message.indexOf('invalid image') !== -1 ||
       message.indexOf('corrupt') !== -1 ||
       message.indexOf('vips') !== -1;
+  }
+
+  private static isPixelLimitError(error: unknown): boolean {
+    const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+    return message.indexOf('input image exceeds pixel limit') !== -1;
   }
 
   public static isRegenerableFailedThumbnail(outPath: string): boolean {
@@ -353,6 +361,8 @@ export class PhotoProcessing {
     // generate thumbnail path
     const outPath = PhotoProcessing.generateConvertedPath(mediaPath, size);
 
+    await PhotoProcessing.removeRegenerableFailedThumbnail(outPath);
+
     // check if file already exist
     try {
       await fsp.access(outPath, fsConstants.R_OK);
@@ -387,6 +397,17 @@ export class PhotoProcessing {
       try {
         await this.taskQue.execute(input);
       } catch (error) {
+        if (sourceType === ThumbnailSourceType.Photo && input.animate && PhotoProcessing.isPixelLimitError(error)) {
+          Logger.warn(
+            '[PhotoProcessing]',
+            'Animated thumbnail exceeds pixel limit, retrying as static thumbnail: ' + input.mediaPath
+          );
+          await this.taskQue.execute({
+            ...input,
+            animate: false,
+          });
+          return outPath;
+        }
         if (sourceType !== ThumbnailSourceType.Photo || !PhotoProcessing.isPermanentThumbnailError(error)) {
           throw error;
         }
