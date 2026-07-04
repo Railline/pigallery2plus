@@ -11,6 +11,16 @@ export class Utils {
   private static isMergeableObject(value: any): boolean {
     return value !== null && typeof value === 'object' && Array.isArray(value) === false;
   }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private static assignSafe(targetObject: any, key: string, value: any): void {
+    Object.defineProperty(targetObject, key, {
+      value,
+      configurable: true,
+      enumerable: true,
+      writable: true,
+    });
+  }
   static GUID(): string {
     const s4 = (): string =>
       Math.floor((1 + Math.random()) * 0x10000)
@@ -363,7 +373,7 @@ export class Utils {
       if (Utils.isMergeableObject(targetObject[key]) && Utils.isMergeableObject(sourceObject[key])) {
         Utils.updateKeys(targetObject[key], sourceObject[key]);
       } else {
-        targetObject[key] = sourceObject[key];
+        Utils.assignSafe(targetObject, key, sourceObject[key]);
       }
     });
   }
@@ -377,7 +387,7 @@ export class Utils {
       if (Utils.isMergeableObject(targetObject[key]) && Utils.isMergeableObject(sourceObject[key])) {
         Utils.setKeys(targetObject[key], sourceObject[key]);
       } else {
-        targetObject[key] = sourceObject[key];
+        Utils.assignSafe(targetObject, key, sourceObject[key]);
       }
     });
   }
@@ -390,11 +400,11 @@ export class Utils {
       }
       if (Utils.isMergeableObject(sourceObject[key])) {
         if (typeof targetObject[key] === 'undefined') {
-          targetObject[key] = {};
+          Utils.assignSafe(targetObject, key, {});
         }
         Utils.setKeysForced(targetObject[key], sourceObject[key]);
       } else {
-        targetObject[key] = sourceObject[key];
+        Utils.assignSafe(targetObject, key, sourceObject[key]);
       }
     });
   }

@@ -21,6 +21,7 @@ import {DirectoryBaseDTO, DirectoryPathDTO} from '../src/common/entities/Directo
 import {FileDTO} from '../src/common/entities/FileDTO';
 import {DiskManager} from '../src/backend/model/fileaccess/DiskManager';
 import * as path from 'path';
+import {randomBytes, randomInt} from 'crypto';
 import {Config} from '../src/common/config/private/Config';
 import {SortByTypes} from '../src/common/entities/SortingMethods';
 
@@ -342,11 +343,11 @@ export class TestHelper {
 
   public static getRandomizedFace(media: PhotoDTO, forceStr: string = null): FaceRegion {
     const rndStr = (): string => {
-      return forceStr + '_' + Math.random().toString(36).substring(7);
+      return forceStr + '_' + randomBytes(6).toString('base64url');
     };
 
     const rndInt = (max = 5000): number => {
-      return Math.floor(Math.random() * max);
+      return randomInt(max);
     };
 
     const f: FaceRegion = {
@@ -367,11 +368,11 @@ export class TestHelper {
 
 
     const rndStr = (): string => {
-      return forceStr + '_' + Math.random().toString(36).substring(7);
+      return forceStr + '_' + randomBytes(6).toString('base64url');
     };
 
     const rndInt = (max = 5000): number => {
-      return Math.floor(Math.random() * max);
+      return randomInt(max);
     };
 
     const sd: MediaDimension = {
