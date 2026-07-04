@@ -1,6 +1,16 @@
 import {HTMLChar} from './HTMLCharCodes';
 
 export class Utils {
+  private static readonly unsafeObjectKeys = new Set(['__proto__', 'prototype', 'constructor']);
+
+  private static isSafeObjectKey(key: string): boolean {
+    return Utils.unsafeObjectKeys.has(key) === false;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private static isMergeableObject(value: any): boolean {
+    return value !== null && typeof value === 'object' && Array.isArray(value) === false;
+  }
   static GUID(): string {
     const s4 = (): string =>
       Math.floor((1 + Math.random()) * 0x10000)
@@ -344,10 +354,13 @@ export class Utils {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   public static updateKeys(targetObject: any, sourceObject: any): void {
     Object.keys(sourceObject).forEach((key): void => {
+      if (!Utils.isSafeObjectKey(key)) {
+        return;
+      }
       if (typeof targetObject[key] === 'undefined') {
         return;
       }
-      if (typeof targetObject[key] === 'object') {
+      if (Utils.isMergeableObject(targetObject[key]) && Utils.isMergeableObject(sourceObject[key])) {
         Utils.updateKeys(targetObject[key], sourceObject[key]);
       } else {
         targetObject[key] = sourceObject[key];
@@ -358,7 +371,10 @@ export class Utils {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   public static setKeys(targetObject: any, sourceObject: any): void {
     Object.keys(sourceObject).forEach((key): void => {
-      if (typeof targetObject[key] === 'object') {
+      if (!Utils.isSafeObjectKey(key)) {
+        return;
+      }
+      if (Utils.isMergeableObject(targetObject[key]) && Utils.isMergeableObject(sourceObject[key])) {
         Utils.setKeys(targetObject[key], sourceObject[key]);
       } else {
         targetObject[key] = sourceObject[key];
@@ -369,7 +385,10 @@ export class Utils {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   public static setKeysForced(targetObject: any, sourceObject: any): void {
     Object.keys(sourceObject).forEach((key): void => {
-      if (typeof sourceObject[key] === 'object') {
+      if (!Utils.isSafeObjectKey(key)) {
+        return;
+      }
+      if (Utils.isMergeableObject(sourceObject[key])) {
         if (typeof targetObject[key] === 'undefined') {
           targetObject[key] = {};
         }

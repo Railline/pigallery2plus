@@ -1047,13 +1047,16 @@ export class SearchManager {
       const likeEscapeChar = '!';
       const convertGlobToLike = (str: string): string => {
         // Match either an escaped character \\(.) or any unescaped SQL/glob special character
-        return str.replace(/\\(.)|([!*?%_])/g, (_, escaped, special) => {
+        return str.replace(/\\(.)|([\\!*?%_])/g, (_, escaped, special) => {
           if (escaped) {
             if (escaped === '*' || escaped === '?') {
               return escaped;
             } // \* -> *, \? -> ?
             if (escaped === likeEscapeChar || escaped === '%' || escaped === '_') {
               return likeEscapeChar + escaped;
+            }
+            if (escaped === '\\') {
+              return '\\\\';
             }
             return escaped;
           }
@@ -1064,6 +1067,9 @@ export class SearchManager {
           }
           if (special === '?') {
             return '_';
+          }
+          if (special === '\\') {
+            return '\\\\';
           }
           return likeEscapeChar + special;                         // % -> !%, _ -> !_
         });

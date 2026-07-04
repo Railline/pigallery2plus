@@ -17,10 +17,20 @@ import {ConfigClassBuilder} from 'typeconfig/src/decorators/builders/ConfigClass
 import {PG2ConfMap, ServerPG2ConfMap} from './src/common/PG2ConfMap';
 
 const execPr = util.promisify(child_process.exec);
+const execFilePr = util.promisify(child_process.execFile);
 
 const translationFolder = 'translate';
 const tsBackendProject = ts.createProject('tsconfig.json');
 declare const process: NodeJS.Process;
+
+const translationLanguages = (list: string[]): string => {
+  list.forEach((language): void => {
+    if (!/^[A-Za-z0-9_-]+$/.test(language)) {
+      throw new Error('Invalid translation language: ' + language);
+    }
+  });
+  return JSON.stringify(list);
+};
 
 const getSwitch = (name: string, def: string = null): string => {
   name = '--' + name;
@@ -295,17 +305,13 @@ const translate = async (
   cb: (err?: any) => void
 ): Promise<void> => {
   try {
-    const localsStr = '"[\\"' + list.join('\\",\\"') + '\\"]"';
-    const {stdout, stderr} = await execPr(
-      'xlf-google-translate ' +
-      '--source-lang="en" ' +
-      '--source-file="./locale.source.xlf" ' +
-      '--destination-filename="messages" ' +
-      '--destination-folder="./src/frontend/"' +
-      translationFolder +
-      ' --destination-languages=' +
-      localsStr
-    );
+    const {stdout, stderr} = await execFilePr('xlf-google-translate', [
+      '--source-lang=en',
+      '--source-file=./locale.source.xlf',
+      '--destination-filename=messages',
+      '--destination-folder=./src/frontend/' + translationFolder,
+      '--destination-languages=' + translationLanguages(list),
+    ]);
     console.log(stdout);
     console.error(stderr);
     cb();
@@ -316,20 +322,16 @@ const translate = async (
 };
 const merge = async (list: any[], cb: (err?: any) => void): Promise<void> => {
   try {
-    const localsStr = '"[\\"' + list.join('\\",\\"') + '\\"]"';
-    const command =
-      'xlf-google-translate ' +
-      '--method="extend-only" ' +
-      '--source-lang="en" ' +
-      '--source-file="./locale.source.xlf" ' +
-      '--destination-filename="messages" ' +
-      '--destination-folder="./src/frontend/' +
-      translationFolder +
-      '" ' +
-      '--destination-languages=' +
-      localsStr;
-    console.log(command);
-    const {stdout, stderr} = await execPr(command);
+    const args = [
+      '--method=extend-only',
+      '--source-lang=en',
+      '--source-file=./locale.source.xlf',
+      '--destination-filename=messages',
+      '--destination-folder=./src/frontend/' + translationFolder,
+      '--destination-languages=' + translationLanguages(list),
+    ];
+    console.log('xlf-google-translate ' + args.join(' '));
+    const {stdout, stderr} = await execFilePr('xlf-google-translate', args);
     console.log(stdout);
     console.error(stderr);
     cb();

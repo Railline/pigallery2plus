@@ -102,7 +102,8 @@ export class RenderingMWs {
     res.setHeader('X-Accel-Buffering', 'no');
     res.setHeader('Content-Disposition', RenderingMWs.contentDispositionInline(fileName));
 
-    return res.sendFile(filePath, {
+    return res.sendFile(path.basename(filePath), {
+      root: path.dirname(filePath),
       maxAge: 31536000,
       dotfiles: 'allow',
       acceptRanges: true,

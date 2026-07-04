@@ -106,6 +106,8 @@ export class Server {
 
     this.app.use(SecurityMWs.securityHeaders);
     this.app.use(SecurityMWs.csrfOriginCheck);
+    this.app.use(SecurityMWs.publicRateLimit);
+    this.app.use(Config.Server.apiPath, SecurityMWs.apiRateLimit);
     this.app.use([Config.Server.apiPath + '/user/login', Config.Server.apiPath + '/share/login'], SecurityMWs.loginRateLimit);
 
     PhotoProcessing.init();
@@ -237,7 +239,5 @@ export class Server {
     });
   }
 }
-
-
 
 

@@ -31,13 +31,14 @@ export class VideoProcessing {
   public static async isValidConvertedPath(
     convertedPath: string
   ): Promise<boolean> {
-    const origFilePath = path.join(
-      ProjectPath.ImageFolder,
-      path.relative(
-        ProjectPath.TranscodedFolder,
-        convertedPath.substring(0, convertedPath.lastIndexOf('_'))
-      )
-    );
+    const origFilePath = ProjectPath.resolveMediaPath(path.relative(
+      ProjectPath.TranscodedFolder,
+      convertedPath.substring(0, convertedPath.lastIndexOf('_'))
+    ));
+
+    if (!origFilePath) {
+      return false;
+    }
 
     const postfix = convertedPath.substring(
       convertedPath.lastIndexOf('_') + 1,

@@ -251,9 +251,13 @@ export class PublicRouter {
 
     app.get('/icon.png', async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const p = path.join(ProjectPath.TempFolder, '/icon.png');
+        const p = ProjectPath.resolveInside(ProjectPath.TempFolder, 'icon.png');
+        if (!p) {
+          return res.sendStatus(404);
+        }
         const outP = await PhotoProcessing.renderSVG(Config.Server.svgIcon, p);
-        res.sendFile(outP, {
+        res.sendFile(path.basename(outP), {
+          root: path.dirname(outP),
           maxAge: 31536000,
           dotfiles: 'allow',
         });
@@ -264,9 +268,13 @@ export class PublicRouter {
 
     app.get('/icon_white.png', async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const p = path.join(ProjectPath.TempFolder, '/icon_inv.png');
+        const p = ProjectPath.resolveInside(ProjectPath.TempFolder, 'icon_inv.png');
+        if (!p) {
+          return res.sendStatus(404);
+        }
         const outP = await PhotoProcessing.renderSVG(Config.Server.svgIcon, p, 'white');
-        res.sendFile(outP, {
+        res.sendFile(path.basename(outP), {
+          root: path.dirname(outP),
           maxAge: 31536000,
           dotfiles: 'allow',
         });
@@ -319,16 +327,18 @@ export class PublicRouter {
 
     const renderFile = (subDir = '') => {
       return (req: Request, res: Response) => {
-        const file = path.join(
-          ProjectPath.FrontendFolder,
-          req.localePath,
-          subDir,
+        const file = ProjectPath.resolveInside(
+          path.join(ProjectPath.FrontendFolder, req.localePath, subDir),
           req.params.file
         );
+        if (!file) {
+          return res.sendStatus(404);
+        }
         if (!fs.existsSync(file)) {
           return res.sendStatus(404);
         }
-        res.sendFile(file, {
+        res.sendFile(path.basename(file), {
+          root: path.dirname(file),
           maxAge: 31536000,
           dotfiles: 'allow',
         });

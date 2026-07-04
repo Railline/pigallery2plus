@@ -21,9 +21,13 @@ export class GPXProcessing {
   }
 
   public static generateConvertedPath(filePath: string): string {
+    const relativePath = ProjectPath.getRelativePathToImages(filePath);
+    if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+      throw new Error('GPX file is outside the media folder: ' + filePath);
+    }
     return path.join(
         ProjectPath.TranscodedFolder,
-        ProjectPath.getRelativePathToImages(path.dirname(filePath)),
+        path.dirname(relativePath),
         path.basename(filePath)
         + '_' + Config.MetaFile.GPXCompressing.minDistance + 'm' +
         Config.MetaFile.GPXCompressing.minTimeDistance + 'ms' +
@@ -34,13 +38,14 @@ export class GPXProcessing {
   public static async isValidConvertedPath(
       convertedPath: string
   ): Promise<boolean> {
-    const origFilePath = path.join(
-        ProjectPath.ImageFolder,
-        path.relative(
-            ProjectPath.TranscodedFolder,
-            convertedPath.substring(0, convertedPath.lastIndexOf('_'))
-        )
-    );
+    const origFilePath = ProjectPath.resolveMediaPath(path.relative(
+        ProjectPath.TranscodedFolder,
+        convertedPath.substring(0, convertedPath.lastIndexOf('_'))
+    ));
+
+    if (!origFilePath) {
+      return false;
+    }
 
 
     try {
@@ -171,4 +176,3 @@ export class GPXProcessing {
   }
 
 }
-

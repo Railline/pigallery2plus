@@ -15,9 +15,11 @@ export class MetaFileMWs {
     if (!req.resultPipe) {
       return next();
     }
-    // if conversion is not enabled redirect, so browser can cache the full
+    const useOriginal = (): void => next();
+
+    // if conversion is not enabled, keep serving the original file.
     if (Config.MetaFile.GPXCompressing.enabled === false) {
-      return res.redirect(req.originalUrl.slice(0, -1 * '\\bestFit'.length));
+      return useOriginal();
     }
     const fullPath = req.resultPipe as string;
     try {
@@ -38,10 +40,9 @@ export class MetaFileMWs {
     } catch (err) {
       // Graceful degradation if compression fails
       Logger.warn(LOG_TAG, 'Error during compressingGPX, using original file: ' + fullPath);
-      return res.redirect(req.originalUrl.slice(0, -1 * '\\bestFit'.length));
+      return useOriginal();
     }
     // not converted and won't be now
-    return res.redirect(req.originalUrl.slice(0, -1 * '\\bestFit'.length));
+    return useOriginal();
   }
 }
-

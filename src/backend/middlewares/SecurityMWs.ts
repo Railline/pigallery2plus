@@ -1,6 +1,7 @@
 import {NextFunction, Request, Response} from 'express';
 import {Config} from '../../common/config/private/Config';
 import {ErrorCodes, ErrorDTO} from '../../common/entities/Error';
+import rateLimit from 'express-rate-limit';
 
 interface RateLimitEntry {
   count: number;
@@ -12,6 +13,26 @@ export class SecurityMWs {
   private static readonly rateLimitWindowMs = 15 * 60 * 1000;
   private static readonly rateLimitMaxAttempts = 20;
   private static readonly rateLimitMaxEntries = 4096;
+
+  public static readonly apiRateLimit = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 2400,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req: Request): boolean => req.method === 'OPTIONS',
+    message: 'Too many requests',
+    validate: {trustProxy: false},
+  });
+
+  public static readonly publicRateLimit = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 6000,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req: Request): boolean => req.method === 'OPTIONS',
+    message: 'Too many requests',
+    validate: {trustProxy: false},
+  });
 
   public static securityHeaders(req: Request, res: Response, next: NextFunction): void {
     res.setHeader('X-Content-Type-Options', 'nosniff');

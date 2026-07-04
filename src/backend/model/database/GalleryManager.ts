@@ -99,9 +99,11 @@ export class GalleryManager {
         return await this.getParentDirFromId(connection, session, dir.id, mediaOffset, mediaLimit, mediaSortMethod, mediaSortAscending);
       }
 
-      const stat = fs.statSync(
-        path.join(ProjectPath.ImageFolder, relativeDirectoryName)
-      );
+      const absoluteDirectoryName = ProjectPath.resolveMediaPath(relativeDirectoryName);
+      if (!absoluteDirectoryName) {
+        return null;
+      }
+      const stat = fs.statSync(absoluteDirectoryName);
       const lastModified = DiskManager.calcLastModified(stat);
 
       // If it seems that the content did not change, do not work on it
