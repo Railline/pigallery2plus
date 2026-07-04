@@ -11,7 +11,11 @@ const LOG_TAG = '[SessionManager]';
 
 export class SessionManager {
 
-  public static readonly NO_PROJECTION_KEY = crypto.createHash('sha256').update('No Key').digest('hex');
+  public static readonly NO_PROJECTION_KEY = SessionManager.projectionHash('No Key');
+
+  private static projectionHash(value: string): string {
+    return crypto.createHash('sha256').update(value).digest('hex').slice(0, 32);
+  }
 
   public buildAllowListForSharing(sharing: SharingEntity): SearchQueryDTO {
     const creatorQuery = this.getQueryForUser(sharing.creator);
@@ -30,7 +34,7 @@ export class SessionManager {
 
   public createProjectionKey(q: SearchQueryDTO) {
     const canonical = SearchQueryUtils.stringifyForComparison(q);
-    return crypto.createHash('sha256').update(canonical).digest('hex');
+    return SessionManager.projectionHash(canonical);
   }
 
   public async buildContext(user: ContextUser): Promise<SessionContext> {
