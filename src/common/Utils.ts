@@ -1,10 +1,15 @@
 import {HTMLChar} from './HTMLCharCodes';
 
 export class Utils {
-  private static readonly unsafeObjectKeys = new Set(['__proto__', 'prototype', 'constructor']);
-
   private static isSafeObjectKey(key: string): boolean {
-    return Utils.unsafeObjectKeys.has(key) === false;
+    switch (key) {
+      case '__proto__':
+      case 'prototype':
+      case 'constructor':
+        return false;
+      default:
+        return true;
+    }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
