@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as crypto from 'crypto';
 import {ProjectPath} from '../../../ProjectPath';
 import {Config} from '../../../../common/config/private/Config';
-import {MediaRendererInput, PhotoWorker, SvgRendererInput, ThumbnailSourceType,} from '../PhotoWorker';
+import {ImageRendererFactory, MediaRendererInput, PhotoWorker, SvgRendererInput, ThumbnailSourceType,} from '../PhotoWorker';
 import {ITaskExecuter, TaskExecuter} from '../TaskExecuter';
 import {FaceRegion, PhotoDTO} from '../../../../common/entities/PhotoDTO';
 import {SupportedFormats} from '../../../../common/SupportedFormats';
@@ -162,14 +162,60 @@ export class PhotoProcessing {
     }
   }
 
-  private static async removeRegenerableFailedThumbnail(outPath: string): Promise<void> {
-    if (!PhotoProcessing.isRegenerableFailedThumbnail(outPath)) {
-      return;
-    }
+  private static async removeFailedThumbnail(outPath: string): Promise<void> {
     await Promise.all([
       fsp.unlink(outPath).catch((): undefined => undefined),
       fsp.unlink(PhotoProcessing.generateFailureMarkerPath(outPath)).catch((): undefined => undefined),
     ]);
+  }
+
+  private static async removeRegenerableFailedThumbnail(outPath: string): Promise<void> {
+    if (!PhotoProcessing.isRegenerableFailedThumbnail(outPath)) {
+      return;
+    }
+    await PhotoProcessing.removeFailedThumbnail(outPath);
+  }
+
+  private static async removeFailedThumbnailIfSourceIsReadable(
+    input: MediaRendererInput,
+    outPath: string
+  ): Promise<void> {
+    const markerPath = PhotoProcessing.generateFailureMarkerPath(outPath);
+    if (!existsSync(markerPath)) {
+      return;
+    }
+    if (PhotoProcessing.isRegenerableFailedThumbnail(outPath)) {
+      await PhotoProcessing.removeFailedThumbnail(outPath);
+      return;
+    }
+
+    const dryRunInput = {
+      ...input,
+      size: Math.min(input.size, 32),
+      makeSquare: false,
+    };
+
+    try {
+      await ImageRendererFactory.render(dryRunInput, true);
+    } catch (error) {
+      if (!input.animate || !PhotoProcessing.isPixelLimitError(error)) {
+        return;
+      }
+      try {
+        await ImageRendererFactory.render({
+          ...dryRunInput,
+          animate: false,
+        }, true);
+      } catch (staticError) {
+        return;
+      }
+    }
+
+    Logger.info(
+      '[PhotoProcessing]',
+      'Removing stale failed thumbnail because source is now readable: ' + input.mediaPath
+    );
+    await PhotoProcessing.removeFailedThumbnail(outPath);
   }
 
   private static async writeFailedThumbnailPlaceholder(
@@ -361,16 +407,6 @@ export class PhotoProcessing {
     // generate thumbnail path
     const outPath = PhotoProcessing.generateConvertedPath(mediaPath, size);
 
-    await PhotoProcessing.removeRegenerableFailedThumbnail(outPath);
-
-    // check if file already exist
-    try {
-      await fsp.access(outPath, fsConstants.R_OK);
-      return outPath;
-    } catch (e) {
-      // ignoring errors
-    }
-
     const runningGeneration = PhotoProcessing.thumbnailGenerationInFlight.get(outPath);
     if (runningGeneration) {
       return runningGeneration;
@@ -389,6 +425,16 @@ export class PhotoProcessing {
       sharpOptions: Config.Media.Photo.sharpOptions,
       animate: Config.Media.Photo.animateGif
     } as MediaRendererInput;
+
+    await PhotoProcessing.removeFailedThumbnailIfSourceIsReadable(input, outPath);
+
+    // check if file already exist
+    try {
+      await fsp.access(outPath, fsConstants.R_OK);
+      return outPath;
+    } catch (e) {
+      // ignoring errors
+    }
 
     const outDir = path.dirname(input.outPath);
 
