@@ -16,6 +16,11 @@ export class PhotoProcessing {
   private static initDone = false;
   private static taskQue: ITaskExecuter<MediaRendererInput | SvgRendererInput, void> = null;
   private static readonly CONVERTED_EXTENSION = '.webp';
+  private static readonly defaultMaxAnimatedThumbnailPixels = 64 * 1024 * 1024;
+  private static readonly maxAnimatedThumbnailPixels = Math.max(
+    1,
+    Number(process.env.PIGALLERY_MAX_ANIMATED_THUMBNAIL_PIXELS || PhotoProcessing.defaultMaxAnimatedThumbnailPixels)
+  );
   private static readonly thumbnailGenerationInFlight = new Map<string, Promise<string>>();
   private static readonly failureMarkerExtension = '.failed.json';
   private static readonly failedThumbnailLog = new Set<string>();
@@ -147,6 +152,30 @@ export class PhotoProcessing {
   private static isPixelLimitError(error: unknown): boolean {
     const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
     return message.indexOf('input image exceeds pixel limit') !== -1;
+  }
+
+  private static async shouldRenderAnimatedThumbnail(input: MediaRendererInput): Promise<boolean> {
+    if (!input.animate || path.extname(input.mediaPath).toLowerCase() !== '.gif') {
+      return input.animate;
+    }
+
+    const metadata = await ImageRendererFactory.metadata(input.mediaPath, true, input.sharpOptions);
+    const pages = metadata.pages || 1;
+    const pageHeight = metadata.pageHeight || Math.max(1, Math.floor((metadata.height || 0) / pages));
+    const width = metadata.width || 0;
+    const estimatedPixels = width * pageHeight * pages;
+
+    if (estimatedPixels <= PhotoProcessing.maxAnimatedThumbnailPixels) {
+      return true;
+    }
+
+    Logger.warn(
+      '[PhotoProcessing]',
+      'Animated thumbnail exceeds safe frame budget, generating static thumbnail: ' +
+      input.mediaPath +
+      ` (${width}x${pageHeight}x${pages}=${estimatedPixels} pixels, limit=${PhotoProcessing.maxAnimatedThumbnailPixels})`
+    );
+    return false;
   }
 
   public static isRegenerableFailedThumbnail(outPath: string): boolean {
@@ -441,6 +470,9 @@ export class PhotoProcessing {
 
     const generation = (async (): Promise<string> => {
       await fsp.mkdir(outDir, {recursive: true});
+      if (sourceType === ThumbnailSourceType.Photo && input.animate) {
+        input.animate = await PhotoProcessing.shouldRenderAnimatedThumbnail(input);
+      }
       try {
         await this.taskQue.execute(input);
       } catch (error) {

@@ -137,6 +137,19 @@ export class ImageRendererFactory {
     Number(process.env.PIGALLERY_SHARP_LIMIT_INPUT_PIXELS || ImageRendererFactory.defaultMaxInputPixels)
   );
 
+  public static async metadata(
+    mediaPath: string,
+    animate: boolean,
+    sharpOptions?: SharpOptions
+  ): Promise<Metadata> {
+    return sharp(mediaPath, {
+      failOnError: false,
+      ...(sharpOptions || {}),
+      limitInputPixels: ImageRendererFactory.maxInputPixels,
+      animated: animate
+    }).metadata();
+  }
+
   @ExtensionDecorator(e => e.gallery.ImageRenderer.render)
   public static async render(input: MediaRendererInput | SvgRendererInput, dryRun = false): Promise<void> {
 
