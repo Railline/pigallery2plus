@@ -136,6 +136,7 @@ export class ImageRendererFactory {
     1,
     Number(process.env.PIGALLERY_SHARP_LIMIT_INPUT_PIXELS || ImageRendererFactory.defaultMaxInputPixels)
   );
+  private static animatedGifRenderer: (input: MediaRendererInput) => Promise<void> = null;
 
   public static async metadata(
     mediaPath: string,
@@ -148,6 +149,57 @@ export class ImageRendererFactory {
       limitInputPixels: ImageRendererFactory.maxInputPixels,
       animated: animate
     }).metadata();
+  }
+
+  public static renderAnimatedGifWithFfmpeg(input: MediaRendererInput): Promise<void> {
+    if (ImageRendererFactory.animatedGifRenderer === null) {
+      ImageRendererFactory.animatedGifRenderer = ImageRendererFactory.buildAnimatedGifRenderer();
+    }
+    return ImageRendererFactory.animatedGifRenderer(input);
+  }
+
+  private static buildAnimatedGifRenderer(): (input: MediaRendererInput) => Promise<void> {
+    const ffmpeg = FFmpegFactory.get();
+    return (input: MediaRendererInput): Promise<void> => {
+      return new Promise((resolve, reject): void => {
+        Logger.silly('[FFmpeg] rendering animated gif thumbnail: ' + input.mediaPath);
+
+        const kernel = input.useLanczos3 === true ? 'lanczos' : 'neighbor';
+        const filter = input.makeSquare === true
+          ? `scale=${input.size}:${input.size}:force_original_aspect_ratio=increase:flags=${kernel},crop=${input.size}:${input.size}`
+          : `scale='if(lt(iw,ih),min(${input.size},iw),-2)':'if(lt(iw,ih),-2,min(${input.size},ih))':flags=${kernel}`;
+        const command = ffmpeg(input.mediaPath);
+        let executedCmd = '';
+        const timeout = setTimeout((): void => {
+          command.kill('SIGKILL');
+          reject('[FFmpeg] animated thumbnail timed out: ' + executedCmd);
+        }, 120000);
+
+        command
+          .on('start', (cmd): void => {
+            executedCmd = cmd;
+          })
+          .on('end', (): void => {
+            clearTimeout(timeout);
+            resolve();
+          })
+          .on('error', (e): void => {
+            clearTimeout(timeout);
+            reject('[FFmpeg] ' + e.toString() + ' executed: ' + executedCmd);
+          })
+          .outputOptions([
+            '-vf', filter,
+            '-an',
+            '-loop', '0',
+            '-vsync', '0',
+            '-vcodec', 'libwebp',
+            '-quality', String(input.quality),
+            '-compression_level', '4',
+            '-preset', 'default'
+          ])
+          .save(input.outPath);
+      });
+    };
   }
 
   @ExtensionDecorator(e => e.gallery.ImageRenderer.render)

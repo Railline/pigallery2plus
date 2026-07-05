@@ -163,9 +163,9 @@ export class PhotoProcessing {
     return message.indexOf('input image exceeds pixel limit') !== -1;
   }
 
-  private static async shouldRenderAnimatedThumbnail(input: MediaRendererInput): Promise<boolean> {
+  private static async shouldUseFfmpegAnimatedThumbnail(input: MediaRendererInput): Promise<boolean> {
     if (!input.animate || path.extname(input.mediaPath).toLowerCase() !== '.gif') {
-      return input.animate;
+      return false;
     }
 
     const metadata = await ImageRendererFactory.metadata(input.mediaPath, true, input.sharpOptions);
@@ -175,16 +175,16 @@ export class PhotoProcessing {
     const estimatedPixels = width * pageHeight * pages;
 
     if (estimatedPixels <= PhotoProcessing.maxAnimatedThumbnailPixels) {
-      return true;
+      return false;
     }
 
     Logger.warn(
       '[PhotoProcessing]',
-      'Animated thumbnail exceeds safe frame budget, generating static thumbnail: ' +
+      'Animated thumbnail exceeds Sharp frame budget, using ffmpeg animated conversion: ' +
       input.mediaPath +
       ` (${width}x${pageHeight}x${pages}=${estimatedPixels} pixels, limit=${PhotoProcessing.maxAnimatedThumbnailPixels})`
     );
-    return false;
+    return true;
   }
 
   public static isRegenerableFailedThumbnail(outPath: string): boolean {
@@ -486,7 +486,22 @@ export class PhotoProcessing {
     const generation = (async (): Promise<string> => {
       await fsp.mkdir(outDir, {recursive: true});
       if (sourceType === ThumbnailSourceType.Photo && input.animate) {
-        input.animate = await PhotoProcessing.shouldRenderAnimatedThumbnail(input);
+        if (await PhotoProcessing.shouldUseFfmpegAnimatedThumbnail(input)) {
+          try {
+            await ImageRendererFactory.renderAnimatedGifWithFfmpeg(input);
+            return outPath;
+          } catch (error) {
+            Logger.warn(
+              '[PhotoProcessing]',
+              'Animated ffmpeg thumbnail failed, retrying as static thumbnail: ' +
+              input.mediaPath +
+              ' (' +
+              (error instanceof Error ? error.message : String(error)) +
+              ')'
+            );
+            input.animate = false;
+          }
+        }
       }
       try {
         await this.taskQue.execute(input);
