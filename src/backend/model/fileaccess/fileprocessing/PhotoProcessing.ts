@@ -124,9 +124,18 @@ export class PhotoProcessing {
   public static generateConvertedPath(mediaPath: string, size: number): string {
     const file = path.basename(mediaPath);
     const animated = Config.Media.Photo.animateGif && path.extname(mediaPath).toLowerCase() == '.gif';
+    const mediaRoot = path.resolve(ProjectPath.ImageFolder);
+    const resolvedMediaPath = path.resolve(mediaPath);
+    if (resolvedMediaPath !== mediaRoot && !resolvedMediaPath.startsWith(mediaRoot + path.sep)) {
+      throw new Error('Media path is outside image folder: ' + mediaPath);
+    }
+    const relativeMediaDir = path.dirname(path.relative(ProjectPath.ImageFolder, resolvedMediaPath));
+    const convertedDir = ProjectPath.resolveInside(ProjectPath.TranscodedFolder, relativeMediaDir);
+    if (!convertedDir) {
+      throw new Error('Converted path is outside transcoded folder: ' + mediaPath);
+    }
     return path.join(
-      ProjectPath.TranscodedFolder,
-      ProjectPath.getRelativePathToImages(path.dirname(mediaPath)),
+      convertedDir,
       file + '_' + size + 'q' + Config.Media.Photo.quality +
       (animated ? 'anim' : '') +
       (Config.Media.Photo.smartSubsample ? 'cs' : '') +
@@ -466,7 +475,13 @@ export class PhotoProcessing {
       // ignoring errors
     }
 
-    const outDir = path.dirname(input.outPath);
+    const outDir = ProjectPath.resolveInside(
+      ProjectPath.TranscodedFolder,
+      path.relative(ProjectPath.TranscodedFolder, path.dirname(input.outPath))
+    );
+    if (!outDir) {
+      throw new Error('Thumbnail output path is outside transcoded folder: ' + input.outPath);
+    }
 
     const generation = (async (): Promise<string> => {
       await fsp.mkdir(outDir, {recursive: true});
