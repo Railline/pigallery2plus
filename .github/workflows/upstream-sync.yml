@@ -69,16 +69,29 @@ jobs:
           Review carefully before merging because PiGallery2Plus carries local performance, metadata, random-link, audit-log, video-player, and deployment changes.
           BODY
           printf '\nUpstream commit: %s\n' "${{ steps.merge.outputs.upstream_sha }}" >> /tmp/upstream-sync-pr.md
-          gh pr create \
+          if gh pr create \
             --repo "${GITHUB_REPOSITORY}" \
             --base main \
             --head upstream-sync/bpatrik-master \
             --title "Sync upstream bpatrik/pigallery2" \
-            --body-file /tmp/upstream-sync-pr.md || \
-          gh pr edit upstream-sync/bpatrik-master \
+            --body-file /tmp/upstream-sync-pr.md; then
+            exit 0
+          fi
+
+          if gh pr edit upstream-sync/bpatrik-master \
             --repo "${GITHUB_REPOSITORY}" \
             --title "Sync upstream bpatrik/pigallery2" \
-            --body-file /tmp/upstream-sync-pr.md
+            --body-file /tmp/upstream-sync-pr.md; then
+            exit 0
+          fi
+
+          {
+            echo "### Upstream sync branch updated"
+            echo
+            echo "The branch \`upstream-sync/bpatrik-master\` was pushed, but this workflow token cannot create a pull request in the current repository settings."
+            echo
+            cat /tmp/upstream-sync-pr.md
+          } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Report upstream sync conflict
         if: ${{ steps.merge.outputs.changed == 'true' && steps.merge.outputs.conflict == 'true' }}
@@ -102,4 +115,8 @@ jobs:
           gh issue create \
             --repo "${GITHUB_REPOSITORY}" \
             --title "Upstream sync conflict with bpatrik/pigallery2" \
-            --body-file /tmp/upstream-sync-conflict.md
+            --body-file /tmp/upstream-sync-conflict.md || {
+              echo "### Upstream sync conflict" >> "${GITHUB_STEP_SUMMARY}"
+              echo >> "${GITHUB_STEP_SUMMARY}"
+              cat /tmp/upstream-sync-conflict.md >> "${GITHUB_STEP_SUMMARY}"
+            }
