@@ -19,6 +19,7 @@ import {ServerTime} from './ServerTimingMWs';
 import {Logger} from '../Logger';
 import {UserRoles} from '../../common/entities/UserDTO';
 import {ContextUser} from '../model/SessionContext';
+import {SortingMethod} from '../../common/entities/SortingMethods';
 
 export class GalleryMWs {
   private static readonly RANDOM_CACHE_TTL = 15 * 60 * 1000;
@@ -435,6 +436,13 @@ export class GalleryMWs {
       const query: SearchQueryDTO = req.resultPipe as any;
       const mediaOffset = parseInt(req.query[QueryParams.gallery.mediaOffset] as string, 10);
       const mediaLimit = parseInt(req.query[QueryParams.gallery.mediaLimit] as string, 10);
+      const mediaSortMethod = parseInt(req.query[QueryParams.gallery.mediaSortMethod] as string, 10);
+      const mediaSorting: SortingMethod[] = Number.isFinite(mediaSortMethod)
+        ? [{
+          method: mediaSortMethod as any,
+          ascending: req.query[QueryParams.gallery.mediaSortAscending] !== '0',
+        }]
+        : undefined;
       const paging = Number.isFinite(mediaLimit) && mediaLimit > 0
         ? {
           offset: Number.isFinite(mediaOffset) && mediaOffset > 0 ? mediaOffset : 0,
@@ -444,7 +452,8 @@ export class GalleryMWs {
       const result = await ObjectManagers.getInstance().SearchManager.search(
         req.session.context,
         query,
-        paging
+        paging,
+        mediaSorting
       );
 
       result.directories.forEach(

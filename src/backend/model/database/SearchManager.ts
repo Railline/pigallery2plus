@@ -71,38 +71,6 @@ export class SearchManager {
     }
   }
 
-  private static sortSearchPageMedia(media: MediaEntity[]): void {
-    if (!media?.length) {
-      return;
-    }
-    const sorting = Config.Gallery.NavBar.SortingGrouping.defaultSearchSortingMethod;
-    switch (sorting.method) {
-      case SortByTypes.Name:
-        media.sort((a, b) => Utils.sortableFilename(a.name).localeCompare(Utils.sortableFilename(b.name)));
-        break;
-      case SortByTypes.Rating:
-        media.sort((a, b) => ((a as PhotoEntity).metadata?.rating || 0) - ((b as PhotoEntity).metadata?.rating || 0));
-        break;
-      case SortByTypes.FileSize:
-        media.sort((a, b) => ((a as PhotoEntity).metadata?.fileSize || 0) - ((b as PhotoEntity).metadata?.fileSize || 0));
-        break;
-      case SortByTypes.PersonCount:
-        media.sort((a, b) => ((a as PhotoEntity).metadata?.faces?.length || 0) - ((b as PhotoEntity).metadata?.faces?.length || 0));
-        break;
-      case SortByTypes.Date:
-      case SortByTypes.Random:
-      default:
-        media.sort((a, b) =>
-          Utils.getTimeMS((a as PhotoEntity).metadata.creationDate, (a as PhotoEntity).metadata.creationDateOffset, Config.Gallery.ignoreTimestampOffset) -
-          Utils.getTimeMS((b as PhotoEntity).metadata.creationDate, (b as PhotoEntity).metadata.creationDateOffset, Config.Gallery.ignoreTimestampOffset)
-        );
-        break;
-    }
-    if (!sorting.ascending) {
-      media.reverse();
-    }
-  }
-
   public static setSorting<T>(
     query: SelectQueryBuilder<T>,
     sortings: SortingMethod[]
@@ -422,7 +390,8 @@ export class SearchManager {
   async search(
     session: SessionContext,
     queryIN: SearchQueryDTO,
-    paging?: { offset: number; limit: number }
+    paging?: { offset: number; limit: number },
+    sorting?: SortingMethod[]
   ): Promise<SearchResultDTO> {
     const query = await this.prepareQuery(queryIN);
     const connection = await SQLConnection.getConnection();
@@ -446,12 +415,18 @@ export class SearchManager {
       q.andWhere(session.projectionQuery);
     }
 
+    const searchSorting = sorting?.length
+      ? sorting
+      : [Config.Gallery.NavBar.SortingGrouping.defaultSearchSortingMethod];
+    const idSortDirection = searchSorting[searchSorting.length - 1]?.ascending === false ? 'DESC' : 'ASC';
+    SearchManager.setSorting(q, searchSorting);
+
     if (paging) {
       const totalMediaCount = await q.getCount();
       q
-        .orderBy('media.id', 'ASC')
-        .skip(paging.offset)
-        .take(paging.limit);
+        .addOrderBy('media.id', idSortDirection)
+        .offset(paging.offset)
+        .limit(paging.limit);
       result.mediaPage = {
         offset: paging.offset,
         limit: paging.limit,
@@ -463,9 +438,6 @@ export class SearchManager {
     }
 
     result.media = await q.getMany();
-    if (paging) {
-      SearchManager.sortSearchPageMedia(result.media as MediaEntity[]);
-    }
     SearchManager.cleanEmptyGalleryGrabberMetadata(result.media);
 
     if (!paging && result.media.length > Config.Search.maxMediaResult) {

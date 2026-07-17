@@ -13,9 +13,7 @@ import {MediaDTO} from '../../../../common/entities/MediaDTO';
 import {FileDTO} from '../../../../common/entities/FileDTO';
 import {GalleryService} from './gallery.service';
 import {SearchQueryDTO} from '../../../../common/entities/SearchQueryDTO';
-import {SortByTypes, SortingMethod} from '../../../../common/entities/SortingMethods';
-import {Utils} from '../../../../common/Utils';
-import {PhotoDTO} from '../../../../common/entities/PhotoDTO';
+import {SortingMethod} from '../../../../common/entities/SortingMethods';
 
 @Injectable()
 export class ContentLoaderService implements OnDestroy {
@@ -103,9 +101,7 @@ export class ContentLoaderService implements OnDestroy {
       return;
     }
 
-    const content = ContentWrapperUtils.unpack(cw);
-    this.sortSearchPageMedia(content);
-    this.setContent(content);
+    this.setContent(ContentWrapperUtils.unpack(cw));
   }
 
   public async loadMoreCurrentDirectory(): Promise<void> {
@@ -248,8 +244,12 @@ export class ContentLoaderService implements OnDestroy {
       this.directorySorting.method !== sorting.method ||
       this.directorySorting.ascending !== sorting.ascending;
     this.directorySorting = {method: sorting.method, ascending: sorting.ascending};
-    if (changed && reloadCurrentDirectory && this.lastContentRequest?.type === 'directory') {
-      this.loadDirectory(this.lastContentRequest.value, true).catch(console.error);
+    if (changed && reloadCurrentDirectory) {
+      if (this.lastContentRequest?.type === 'directory') {
+        this.loadDirectory(this.lastContentRequest.value, true).catch(console.error);
+      } else if (this.lastContentRequest?.type === 'search') {
+        this.search(JSON.parse(this.lastContentRequest.value), true).catch(console.error);
+      }
     }
   }
 
@@ -328,7 +328,6 @@ export class ContentLoaderService implements OnDestroy {
       if (!nextContent?.searchResult?.media?.length) {
         return;
       }
-      this.sortSearchPageMedia(nextContent);
 
       const latest = this.content.value;
       if (!latest?.searchResult) {
@@ -393,6 +392,8 @@ export class ContentLoaderService implements OnDestroy {
     const params: { [key: string]: unknown } = {
       [QueryParams.gallery.mediaOffset]: offset,
       [QueryParams.gallery.mediaLimit]: limit,
+      [QueryParams.gallery.mediaSortMethod]: this.directorySorting.method,
+      [QueryParams.gallery.mediaSortAscending]: this.directorySorting.ascending ? '1' : '0',
     };
     if (Config.Sharing.enabled === true && this.shareService.isSharing()) {
       params[QueryParams.gallery.sharingKey_query] = this.shareService.getSharingKey();
@@ -406,41 +407,6 @@ export class ContentLoaderService implements OnDestroy {
       this.galleryCacheService.setSearch(cw, searchCacheScope);
     }
     return cw;
-  }
-
-  private sortSearchPageMedia(cw: ContentWrapperWithError): void {
-    const media = cw?.searchResult?.media;
-    if (!media?.length) {
-      return;
-    }
-    const sorting = Config.Gallery.NavBar.SortingGrouping.defaultSearchSortingMethod;
-    switch (sorting.method) {
-      case SortByTypes.Name:
-        media.sort((a: MediaDTO, b: MediaDTO) =>
-          Utils.sortableFilename(a.name).localeCompare(Utils.sortableFilename(b.name))
-        );
-        break;
-      case SortByTypes.Rating:
-        media.sort((a: PhotoDTO, b: PhotoDTO) => (a.metadata?.rating || 0) - (b.metadata?.rating || 0));
-        break;
-      case SortByTypes.FileSize:
-        media.sort((a: PhotoDTO, b: PhotoDTO) => (a.metadata?.fileSize || 0) - (b.metadata?.fileSize || 0));
-        break;
-      case SortByTypes.PersonCount:
-        media.sort((a: PhotoDTO, b: PhotoDTO) => (a.metadata?.faces?.length || 0) - (b.metadata?.faces?.length || 0));
-        break;
-      case SortByTypes.Date:
-      case SortByTypes.Random:
-      default:
-        media.sort((a: PhotoDTO, b: PhotoDTO) =>
-          Utils.getTimeMS(a.metadata.creationDate, a.metadata.creationDateOffset, Config.Gallery.ignoreTimestampOffset) -
-          Utils.getTimeMS(b.metadata.creationDate, b.metadata.creationDateOffset, Config.Gallery.ignoreTimestampOffset)
-        );
-        break;
-    }
-    if (!sorting.ascending) {
-      media.reverse();
-    }
   }
 
   isSearchResult(): boolean {
