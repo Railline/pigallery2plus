@@ -94,7 +94,7 @@ export class SearchManager {
           query.addOrderBy('media.metadata.rating', sort.ascending ? 'ASC' : 'DESC');
           break;
         case SortByTypes.Name:
-          query.addOrderBy('media.name', sort.ascending ? 'ASC' : 'DESC');
+          query.addOrderBy('LOWER(media.name)', sort.ascending ? 'ASC' : 'DESC');
           break;
         case SortByTypes.PersonCount:
           query.addOrderBy('media.metadata.personsLength', sort.ascending ? 'ASC' : 'DESC');

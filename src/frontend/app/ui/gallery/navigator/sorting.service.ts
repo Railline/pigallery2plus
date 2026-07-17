@@ -238,9 +238,8 @@ export class GallerySortingService {
     return () => '';
   }
 
-  private isPagedSearchContent(dirContent: DirectoryContent): boolean {
-    return !!(dirContent as DirectoryContent & { searchQuery?: unknown; mediaPage?: unknown }).searchQuery &&
-      !!(dirContent as DirectoryContent & { searchQuery?: unknown; mediaPage?: unknown }).mediaPage;
+  private isPagedMediaContent(dirContent: DirectoryContent): boolean {
+    return !!(dirContent as DirectoryContent & { mediaPage?: unknown }).mediaPage;
   }
 
   private buildServerOrderedMediaGroups(dirContent: DirectoryContent, grouping: GroupingMethod): MediaGroup[] {
@@ -326,7 +325,7 @@ export class GallerySortingService {
 
                 // group
                 if (dirContent.media) {
-                  if (this.isPagedSearchContent(dirContent)) {
+                  if (this.isPagedMediaContent(dirContent)) {
                     c.mediaGroups = this.buildServerOrderedMediaGroups(dirContent, grouping);
                     return c;
                   }
