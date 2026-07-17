@@ -17,6 +17,7 @@ import {DiskManager} from '../fileaccess/DiskManager';
 import {SessionContext} from '../SessionContext';
 import {FileEntity} from './enitites/FileEntity';
 import {SortByTypes} from '../../../common/entities/SortingMethods';
+import {SQLSorting} from './SQLSorting';
 
 const LOG_TAG = '[GalleryManager]';
 
@@ -556,7 +557,8 @@ export class GalleryManager {
         const sortDirection = mediaSortAscending ? 'ASC' : 'DESC';
         switch (mediaSortMethod) {
           case SortByTypes.Name:
-            mQuery.orderBy('media.name', sortDirection);
+            mQuery.orderBy();
+            SQLSorting.addNaturalNameOrder(mQuery, 'media', sortDirection);
             break;
           case SortByTypes.Rating:
             mQuery.orderBy('media.metadata.rating', sortDirection);
@@ -573,8 +575,8 @@ export class GalleryManager {
         }
         mQuery
           .addOrderBy('media.id', sortDirection)
-          .skip(offset)
-          .take(limit);
+          .offset(offset)
+          .limit(limit);
       }
       t = Date.now();
       dir.media = await mQuery.getMany();

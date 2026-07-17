@@ -34,6 +34,7 @@ import {SQL_COLLATE} from './enitites/EntityUtils';
 import {GroupSortByTypes, SortByTypes, SortingMethod} from '../../../common/entities/SortingMethods';
 import {SessionContext} from '../SessionContext';
 import {DiskManager} from '../fileaccess/DiskManager';
+import {SQLSorting} from './SQLSorting';
 
 export class SearchManager {
   private DIRECTORY_SELECT = [
@@ -94,7 +95,7 @@ export class SearchManager {
           query.addOrderBy('media.metadata.rating', sort.ascending ? 'ASC' : 'DESC');
           break;
         case SortByTypes.Name:
-          query.addOrderBy('LOWER(media.name)', sort.ascending ? 'ASC' : 'DESC');
+          SQLSorting.addNaturalNameOrder(query, 'media', sort.ascending ? 'ASC' : 'DESC');
           break;
         case SortByTypes.PersonCount:
           query.addOrderBy('media.metadata.personsLength', sort.ascending ? 'ASC' : 'DESC');

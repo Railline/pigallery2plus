@@ -9,7 +9,7 @@ import {PhotoDTO} from '../../../../../common/entities/PhotoDTO';
 import {map, switchMap} from 'rxjs/operators';
 import {SeededRandomService} from '../../../model/seededRandom.service';
 import {ContentWrapper} from '../../../../../common/entities/ContentWrapper';
-import {SubDirectoryDTO} from '../../../../../common/entities/DirectoryDTO';
+import {DirectoryMediaPageDTO, SubDirectoryDTO} from '../../../../../common/entities/DirectoryDTO';
 import {MediaDTO} from '../../../../../common/entities/MediaDTO';
 import {FileDTO} from '../../../../../common/entities/FileDTO';
 import {Utils} from '../../../../../common/Utils';
@@ -238,8 +238,12 @@ export class GallerySortingService {
     return () => '';
   }
 
-  private isPagedMediaContent(dirContent: DirectoryContent): boolean {
-    return !!(dirContent as DirectoryContent & { mediaPage?: unknown }).mediaPage;
+  private requiresServerOrderedMedia(dirContent: DirectoryContent): boolean {
+    const page = (dirContent as DirectoryContent & { mediaPage?: DirectoryMediaPageDTO }).mediaPage;
+    if (!page) {
+      return false;
+    }
+    return page.hasMore === true || page.total > (dirContent.media?.length || 0);
   }
 
   private buildServerOrderedMediaGroups(dirContent: DirectoryContent, grouping: GroupingMethod): MediaGroup[] {
@@ -325,7 +329,7 @@ export class GallerySortingService {
 
                 // group
                 if (dirContent.media) {
-                  if (this.isPagedMediaContent(dirContent)) {
+                  if (this.requiresServerOrderedMedia(dirContent)) {
                     c.mediaGroups = this.buildServerOrderedMediaGroups(dirContent, grouping);
                     return c;
                   }
