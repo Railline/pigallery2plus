@@ -1527,7 +1527,7 @@ describe('SearchManager', (sqlHelper: DBTestHelper) => {
         expect(removeDir(await sm.search(DBTestHelper.defaultSession, query))).to.deep.equalInAnyOrder(removeDir({
           searchQuery: query,
           directories: [],
-          media: [p, p2, v],
+          media: [p, p2, v, pFaceLess, p4],
           metaFile: [],
           resultOverflow: false
         } as SearchResultDTO), JSON.stringify(query));

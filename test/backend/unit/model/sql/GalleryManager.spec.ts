@@ -210,6 +210,11 @@ describe('GalleryManager', (sqlHelper: DBTestHelper) => {
         const retObj = {directories: [], media: [], metaFile: [], name: 'INDEX_RESULT'} as any;
         return Promise.resolve(retObj);
       }) as any;
+      ObjectManagers.getInstance().IndexingManager.refreshDirectoryIncremental = ((...args: any[]) => {
+        calledArgs = args;
+        bgCalls++;
+        return Promise.resolve(true);
+      }) as any;
     });
 
     afterEach(() => {
@@ -515,4 +520,3 @@ describe('GalleryManager', (sqlHelper: DBTestHelper) => {
     });
   });
 });
-
