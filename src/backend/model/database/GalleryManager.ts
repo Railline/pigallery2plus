@@ -40,8 +40,14 @@ export class GalleryManager {
     }
     GalleryManager.backgroundIndexing.add(relativeDirectoryName);
     Logger.info(LOG_TAG, `Scheduling background indexing for ${relativeDirectoryName}: ${reason}`);
-    ObjectManagers.getInstance()
-      .IndexingManager.indexDirectory(relativeDirectoryName)
+    const indexingManager = ObjectManagers.getInstance().IndexingManager;
+    indexingManager
+      .refreshDirectoryIncremental(relativeDirectoryName)
+      .then(async (refreshed): Promise<void> => {
+        if (refreshed !== true) {
+          await indexingManager.indexDirectory(relativeDirectoryName, true);
+        }
+      })
       .catch((err): void => {
         Logger.error(LOG_TAG, `Background indexing failed for ${relativeDirectoryName}: ` + err);
       })
@@ -138,13 +144,16 @@ export class GalleryManager {
       }
 
       // not indexed since a while, index it lazily
+      const cacheAge = Date.now() - dir.lastScanned;
+      const cacheExpired = cacheAge > Config.Indexing.cachedFolderTimeout;
       if (
-        (Date.now() - dir.lastScanned > Config.Indexing.cachedFolderTimeout &&
+        (cacheExpired &&
           Config.Indexing.reIndexingSensitivity >= ReIndexingSensitivity.medium) ||
-        Config.Indexing.reIndexingSensitivity >= ReIndexingSensitivity.high
+        (!pagedMediaRequest &&
+          Config.Indexing.reIndexingSensitivity >= ReIndexingSensitivity.high)
       ) {
         // on the fly reindexing
-        Logger.silly(LOG_TAG, 'lazy reindexing reason: cache timeout: lastScanned: ' + (Date.now() - dir.lastScanned) +
+        Logger.silly(LOG_TAG, 'lazy reindexing reason: cache timeout: lastScanned: ' + cacheAge +
           'ms ago, cachedFolderTimeout:' + Config.Indexing.cachedFolderTimeout);
         GalleryManager.scheduleBackgroundIndex(relativeDirectoryName, 'cache timeout');
       }
@@ -518,12 +527,6 @@ export class GalleryManager {
       if (dir.directories) {
         for (const item of dir.directories) {
           if (item.cache?.valid) {
-            item.media = [];
-            item.isPartial = true;
-            continue;
-          }
-          if (pagedMediaRequest) {
-            item.cache = GalleryManager.createLightweightDirectoryCache();
             item.media = [];
             item.isPartial = true;
             continue;

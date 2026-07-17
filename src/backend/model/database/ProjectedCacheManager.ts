@@ -135,7 +135,7 @@ export class ProjectedCacheManager implements IObjectManager {
         new Brackets(q => {
           q.where('directory.id = :dir', {dir: dir.id});
           if (Config.Database.type === DatabaseType.mysql) {
-            q.orWhere('directory.path like :path || \'%\'', {path: DiskManager.pathFromParent(dir)});
+            q.orWhere('directory.path LIKE :path', {path: DiskManager.pathFromParent(dir) + '%'});
           } else {
             q.orWhere('directory.path GLOB :path', {
               path: DiskManager.pathFromParent(dir).replaceAll('[', '[[]') + '*',

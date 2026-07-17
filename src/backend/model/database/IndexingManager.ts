@@ -3,11 +3,12 @@ import {DirectoryEntity} from './enitites/DirectoryEntity';
 import {SQLConnection} from './SQLConnection';
 import {PhotoEntity, PhotoMetadataEntity} from './enitites/PhotoEntity';
 import {Utils} from '../../../common/Utils';
-import {PhotoMetadata,} from '../../../common/entities/PhotoDTO';
+import {PhotoDTO, PhotoMetadata,} from '../../../common/entities/PhotoDTO';
 import {Connection, ObjectLiteral, Repository} from 'typeorm';
 import {MediaEntity} from './enitites/MediaEntity';
 import {MediaDTO, MediaDTOUtils} from '../../../common/entities/MediaDTO';
 import {VideoEntity} from './enitites/VideoEntity';
+import {VideoDTO} from '../../../common/entities/VideoDTO';
 import {FileEntity} from './enitites/FileEntity';
 import {FileDTO} from '../../../common/entities/FileDTO';
 import {NotificationManager} from '../NotifocationManager';
@@ -24,6 +25,10 @@ import {MDFileEntity} from './enitites/MDFileEntity';
 import {MDFileDTO} from '../../../common/entities/MDFileDTO';
 import {DirectoryScanProgress, DiskManager} from '../fileaccess/DiskManager';
 import {ProjectedDirectoryCacheEntity} from './enitites/ProjectedDirectoryCacheEntity';
+import {PhotoProcessing} from '../fileaccess/fileprocessing/PhotoProcessing';
+import {VideoProcessing} from '../fileaccess/fileprocessing/VideoProcessing';
+import {MetadataLoader} from '../fileaccess/MetadataLoader';
+import {Config} from '../../../common/config/private/Config';
 
 const LOG_TAG = '[IndexingManager]';
 
@@ -150,6 +155,123 @@ export class IndexingManager {
     } finally {
       this.isSaving = false;
     }
+  }
+
+  public async refreshDirectoryIncremental(
+    relativeDirectoryName: string
+  ): Promise<boolean> {
+    relativeDirectoryName = DiskManager.normalizeDirPath(relativeDirectoryName);
+    const dto = DiskManager.getDTOFromPath(relativeDirectoryName);
+    const absoluteDirectoryName = path.join(
+      ProjectPath.ImageFolder,
+      relativeDirectoryName
+    );
+
+    const connection = await SQLConnection.getConnection();
+    const directoryRepository = connection.getRepository(DirectoryEntity);
+    const currentDir = await directoryRepository
+      .createQueryBuilder('directory')
+      .where('directory.name = :name AND directory.path = :path', {
+        name: dto.name,
+        path: dto.path,
+      })
+      .getOne();
+
+    if (!currentDir) {
+      return false;
+    }
+
+    const [stat, list, indexedMedia] = await Promise.all([
+      fs.promises.stat(absoluteDirectoryName),
+      fs.promises.readdir(absoluteDirectoryName, {withFileTypes: true}),
+      connection
+        .getRepository(MediaEntity)
+        .createQueryBuilder('media')
+        .where('media.directory = :dir', {
+          dir: currentDir.id,
+        })
+        .select(['media.name'])
+        .getMany(),
+    ]);
+    const indexedMediaNames = new Set(indexedMedia.map((m) => m.name));
+    const photosToInsert: PhotoDTO[] = [];
+    const videosToInsert: VideoDTO[] = [];
+
+    for (const dirent of list) {
+      if (dirent.isDirectory() || indexedMediaNames.has(dirent.name) || DiskManager.excludeFile(dirent.name)) {
+        continue;
+      }
+
+      const fullFilePath = path.normalize(
+        path.join(absoluteDirectoryName, dirent.name)
+      );
+
+      if (PhotoProcessing.isPhoto(fullFilePath)) {
+        try {
+          if ((await PhotoProcessing.hasValidPhotoSignature(fullFilePath)) !== true) {
+            Logger.warn(
+              LOG_TAG,
+              'Invalid image signature, skipping: ' + fullFilePath
+            );
+            continue;
+          }
+          const metadata = await MetadataLoader.loadPhotoMetadata(fullFilePath) as PhotoMetadataEntity;
+          metadata.personsLength = metadata?.persons?.length || 0;
+          photosToInsert.push({
+            id: null,
+            name: dirent.name,
+            directory: {id: currentDir.id} as DirectoryBaseDTO,
+            metadata,
+          } as PhotoDTO);
+        } catch (err) {
+          NotificationManager.warning('Media loading error, skipping: ' +
+            fullFilePath +
+            ', reason: ' +
+            err.toString()
+          );
+          console.error(err);
+        }
+      } else if (VideoProcessing.isVideo(fullFilePath)) {
+        try {
+          if (Config.Media.Video.enabled === false) {
+            continue;
+          }
+          videosToInsert.push({
+            id: null,
+            name: dirent.name,
+            directory: {id: currentDir.id} as DirectoryBaseDTO,
+            metadata: await MetadataLoader.loadVideoMetadata(fullFilePath),
+          } as VideoDTO);
+        } catch (err) {
+          Logger.warn(
+            LOG_TAG,
+            'Media loading error, skipping: ' +
+            fullFilePath +
+            ', reason: ' +
+            err.toString()
+          );
+        }
+      }
+    }
+
+    await this.saveChunk(connection.getRepository(PhotoEntity), photosToInsert, 500);
+    await this.saveChunk(connection.getRepository(VideoEntity), videosToInsert, 500);
+
+    currentDir.lastModified = DiskManager.calcLastModified(stat);
+    currentDir.lastScanned = Date.now();
+    await directoryRepository.save(currentDir);
+
+    await ObjectManagers.getInstance().onDataChange({
+      name: dto.name,
+      path: dto.path,
+    });
+
+    Logger.info(
+      LOG_TAG,
+      `Incremental refresh saved for ${relativeDirectoryName}: ` +
+      `${photosToInsert.length + videosToInsert.length} new media`
+    );
+    return true;
   }
 
   // Todo fix it, once typeorm support connection pools for sqlite

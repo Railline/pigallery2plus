@@ -1110,11 +1110,20 @@ export class SearchManager {
           '/'
         );
         const alias = aliases['directory'] ?? 'directory';
-        textParam['fullPath' + queryId] = createMatchString(DiskManager.normalizeDirPath(dirPathStr));
+        const normalizedDirPath = DiskManager.normalizeDirPath(dirPathStr);
+        textParam['fullPath' + queryId] = createMatchString(normalizedDirPath);
         q[whereFN](
           getLikeExpr(`${alias}.path`, 'fullPath'),
           textParam
         );
+        if (query.type === SearchQueryTypes.directory) {
+          textParam['fullPathRecursive' + queryId] =
+            createMatchString(normalizedDirPath) + '%';
+          q[whereFN](
+            getLikeExpr(`${alias}.path`, 'fullPathRecursive'),
+            textParam
+          );
+        }
 
         const directoryPath = GalleryManager.parseRelativeDirPath(dirPathStr);
         q[whereFN](
