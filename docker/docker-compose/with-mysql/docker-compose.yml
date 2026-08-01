@@ -1,4 +1,3 @@
-version: '3'
 services:
   pigallery-db:
     container_name: pigallery-db
@@ -6,10 +5,10 @@ services:
     volumes:
       - db-data:/var/lib/mysql
     environment:
-      - MYSQL_ROOT_PASSWORD=putsomethinginherethatyouwouldlikeasthepassword
-      - MYSQL_USER=pigallery2
-      - MYSQL_PASSWORD=pigallery2_pass
-      - MYSQL_DATABASE=pigallery2
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+      MYSQL_USER: ${MYSQL_USER:-pigallery2}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-pigallery2}
 
   nginx:
     image: nginx:latest
@@ -25,15 +24,23 @@ services:
     restart: always
 
   pigallery2:
-    image: bpatrik/pigallery2:latest
-    command: sh -c 'bin/wait-for pigallery-db:3306 -- --Server-Database-mysql-host=pigallery-db --Server-Database-mysql-username=pigallery2 --Server-Database-mysql-password=pigallery2_pass --Server-Database-mysql-database=pigallery2'
-    container_name: pigallery2
+    image: railline/pigallery2plus:latest
+    command:
+      - --Database-type=mysql
+      - --Database-mysql-host=pigallery-db
+      - --Database-mysql-username=${MYSQL_USER:-pigallery2}
+      - --Database-mysql-password=${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
+      - --Database-mysql-database=${MYSQL_DATABASE:-pigallery2}
+    container_name: pigallery2plus
     deploy:
       resources:
         limits:
           memory: 3G # <1GB RAM might also work. It will trigger GC more often. GC is slow. See https://github.com/bpatrik/pigallery2/issues/1080
     environment:
       - NODE_ENV=production # set to 'debug' for full debug logging
+      - DATABASE_TYPE=mysql
+      - MYSQL_HOST=pigallery-db
+      - MYSQL_PORT=3306
       # - NODE_OPTIONS=--enable-source-maps # enable source map support on the backend  for development
     volumes:
       - "./pigallery2/config:/app/data/config" # CHANGE ME
@@ -42,6 +49,8 @@ services:
       - "./pigallery2/tmp:/app/data/tmp" # CHANGE ME
     expose:
       - "80"
+    depends_on:
+      - pigallery-db
     restart: always
 
 volumes:

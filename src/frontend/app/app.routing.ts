@@ -5,16 +5,8 @@ import {
   UrlMatchResult,
   UrlSegment,
 } from '@angular/router';
-import { LoginComponent } from './ui/login/login.component';
-import { GalleryComponent } from './ui/gallery/gallery.component';
-import { AdminComponent } from './ui/admin/admin.component';
-import { ShareLoginComponent } from './ui/sharelogin/share-login.component';
 import { QueryParams } from '../../common/QueryParams';
-import { DuplicateComponent } from './ui/duplicates/duplicates.component';
-import { FacesComponent } from './ui/faces/faces.component';
 import { AuthGuard } from './model/network/helper/auth.guard';
-import { AlbumsComponent } from './ui/albums/albums.component';
-import { ErrorComponent } from './ui/error/error.component';
 
 export function galleryMatcherFunction(
   segments: UrlSegment[]
@@ -61,39 +53,47 @@ export function galleryMatcherFunction(
 const routes: Routes = [
   {
     path: 'login',
-    component: LoginComponent,
+    loadComponent: () => import('./ui/login/login.component')
+      .then(({LoginComponent}) => LoginComponent),
   },
   {
     path: 'shareLogin',
-    component: ShareLoginComponent,
+    loadComponent: () => import('./ui/sharelogin/share-login.component')
+      .then(({ShareLoginComponent}) => ShareLoginComponent),
   },
   {
     path: 'admin',
-    component: AdminComponent,
+    loadComponent: () => import('./ui/admin/admin.component')
+      .then(({AdminComponent}) => AdminComponent),
     canActivate: [AuthGuard],
   },
   {
     path: 'duplicates',
-    component: DuplicateComponent,
+    loadComponent: () => import('./ui/duplicates/duplicates.component')
+      .then(({DuplicateComponent}) => DuplicateComponent),
     canActivate: [AuthGuard],
   },
   {
     path: 'albums',
-    component: AlbumsComponent,
+    loadComponent: () => import('./ui/albums/albums.component')
+      .then(({AlbumsComponent}) => AlbumsComponent),
     canActivate: [AuthGuard],
   },
   {
     path: 'faces',
-    component: FacesComponent,
+    loadComponent: () => import('./ui/faces/faces.component')
+      .then(({FacesComponent}) => FacesComponent),
     canActivate: [AuthGuard],
   },
   {
     path: 'error',
-    component: ErrorComponent,
+    loadComponent: () => import('./ui/error/error.component')
+      .then(({ErrorComponent}) => ErrorComponent),
   },
   {
     matcher: galleryMatcherFunction,
-    component: GalleryComponent,
+    loadComponent: () => import('./ui/gallery/gallery.component')
+      .then(({GalleryComponent}) => GalleryComponent),
     canActivate: [AuthGuard],
   },
   { path: '', redirectTo: '/login', pathMatch: 'full' },

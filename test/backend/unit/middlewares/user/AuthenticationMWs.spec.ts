@@ -156,6 +156,135 @@ describe('Authentication middleware', (sqlHelper: DBTestHelper) => {
       expect(called).to.eql(0);
       expect(req.session.context).to.eql(originalContext);
     });
+
+    it('should refresh a persisted user role and strip its password hash', async () => {
+      Config.Users.authenticationRequired = true;
+      const managers = ObjectManagers.getInstance();
+      const originalFindOne = managers.UserManager.findOne;
+      const userId = 123456;
+      AuthenticationMWs.invalidateUser(userId);
+      managers.UserManager.findOne = async () => ({
+        id: userId,
+        name: 'updated-user',
+        role: UserRoles.User,
+        password: '$2b$09$database-hash',
+      }) as any;
+      const req: any = {
+        session: {context: {user: {id: userId, name: 'updated-user', role: UserRoles.Admin}}},
+        sessionOptions: {},
+        query: {},
+        params: {},
+      };
+      let nextError: unknown;
+
+      try {
+        await AuthenticationMWs.authenticate(req, null as any, (err?: unknown) => {
+          nextError = err;
+        });
+      } finally {
+        managers.UserManager.findOne = originalFindOne;
+        AuthenticationMWs.invalidateUser(userId);
+      }
+
+      expect(nextError).to.be.undefined;
+      expect(req.session.context.user.role).to.equal(UserRoles.User);
+      expect(req.session.context.user.password).to.be.undefined;
+    });
+
+    it('should revoke the cookie session when its database user was deleted', async () => {
+      Config.Users.authenticationRequired = true;
+      const managers = ObjectManagers.getInstance();
+      const originalFindOne = managers.UserManager.findOne;
+      const userId = 123457;
+      AuthenticationMWs.invalidateUser(userId);
+      managers.UserManager.findOne = async () => null as any;
+      const req: any = {
+        session: {context: {user: {id: userId, name: 'deleted-user', role: UserRoles.Admin}}},
+        sessionOptions: {},
+        query: {},
+        params: {},
+      };
+      let statusCode: number;
+      let nextError: ErrorDTO;
+
+      try {
+        await AuthenticationMWs.authenticate(req, {status: (code: number) => statusCode = code} as any, ((err?: ErrorDTO) => {
+          nextError = err;
+        }) as any);
+      } finally {
+        managers.UserManager.findOne = originalFindOne;
+        AuthenticationMWs.invalidateUser(userId);
+      }
+
+      expect(statusCode).to.equal(401);
+      expect(nextError?.code).to.equal(ErrorCodes.NOT_AUTHENTICATED);
+      expect(req.session.context).to.be.undefined;
+    });
+
+    it('should not attach an old session to a replacement account with the same database ID', async () => {
+      Config.Users.authenticationRequired = true;
+      const managers = ObjectManagers.getInstance();
+      const originalFindOne = managers.UserManager.findOne;
+      const userId = 123458;
+      AuthenticationMWs.invalidateUser(userId);
+      managers.UserManager.findOne = async () => ({
+        id: userId,
+        name: 'replacement-user',
+        role: UserRoles.Admin,
+        password: '$2b$09$database-hash',
+      }) as any;
+      const req: any = {
+        session: {context: {user: {id: userId, name: 'deleted-user', role: UserRoles.User}}},
+        sessionOptions: {},
+        query: {},
+        params: {},
+      };
+      let nextError: ErrorDTO;
+
+      try {
+        await AuthenticationMWs.authenticate(req, {status: (): void => undefined} as any, ((err?: ErrorDTO) => {
+          nextError = err;
+        }) as any);
+      } finally {
+        managers.UserManager.findOne = originalFindOne;
+        AuthenticationMWs.invalidateUser(userId);
+      }
+
+      expect(nextError?.code).to.equal(ErrorCodes.NOT_AUTHENTICATED);
+      expect(req.session.context).to.be.undefined;
+    });
+
+    it('should revoke a persisted sharing session when the share no longer exists', async () => {
+      Config.Users.authenticationRequired = true;
+      const managers = ObjectManagers.getInstance();
+      const originalFindOne = managers.SharingManager.findOne;
+      const sharingKey = 'deleted-sharing-key';
+      AuthenticationMWs.invalidateSharing(sharingKey);
+      managers.SharingManager.findOne = async () => null;
+      const req: any = {
+        session: {context: {user: {
+          name: 'Guest',
+          role: UserRoles.LimitedGuest,
+          usedSharingKey: sharingKey,
+        }}},
+        sessionOptions: {},
+        query: {},
+        params: {},
+      };
+      let nextError: ErrorDTO;
+
+      try {
+        await AuthenticationMWs.authenticate(req, {status: (): void => undefined} as any, ((err?: ErrorDTO) => {
+          nextError = err;
+        }) as any);
+      } finally {
+        managers.SharingManager.findOne = originalFindOne;
+        AuthenticationMWs.invalidateSharing(sharingKey);
+      }
+
+      expect(nextError?.code).to.equal(ErrorCodes.NOT_AUTHENTICATED);
+      expect(req.session.context).to.be.undefined;
+    });
   });
 
   describe('inverseAuthenticate', () => {

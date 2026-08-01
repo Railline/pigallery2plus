@@ -5,7 +5,8 @@ export class ExtensionRepository {
 
   extensionsList: ExtensionListItem[];
   lastUpdate = 0;
-  private UPDATE_FREQUENCY_MS = 30 * 1000;
+  private readonly UPDATE_FREQUENCY_MS = 30 * 1000;
+  private readonly MAX_REPOSITORY_BYTES = 2 * 1024 * 1024;
 
   public async getExtensionList(): Promise<ExtensionListItem[]> {
     if (this.lastUpdate < Date.now() - this.UPDATE_FREQUENCY_MS) {
@@ -15,25 +16,28 @@ export class ExtensionRepository {
     return this.extensionsList;
   }
 
-  private getUrlFromMDLink(text: string) {
+  private getUrlFromMDLink(text: string): string | undefined {
     if (!text) {
       return text;
     }
     text = ('' + text).trim();
-    /* Match full links and relative paths */
-    // source: https://davidwells.io/snippets/regex-match-markdown-links
-    const regex = /^\[.*]\(((?:\/|https?:\/\/)[\S./?=#]+)\)$/;
-
-    if (text.match(regex).length > 0) {
-      return text.match(regex)[0].match(/https?:\/\/[\S./?=#]+/)[0].slice(0, -1);
+    const markdownLink = /^\[[^\]]*]\((https?:\/\/[^\s)]+)\)$/i.exec(text);
+    const candidate = markdownLink?.[1] || text;
+    try {
+      const parsed = new URL(candidate);
+      return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.toString() : undefined;
+    } catch {
+      return undefined;
     }
-    return text;
   }
 
   public repoMD(text: string): ExtensionListItem[] {
     const lines = text.split('\n');
     lines.forEach(line => line.trim());
     const tableStartLine = lines.findIndex(l => l.startsWith('|     **Name**     |'));
+    if (tableStartLine < 0) {
+      return [];
+    }
     const tableHeaderLines = 2;
     const table = lines.slice(tableStartLine + tableHeaderLines);
     const extensions: ExtensionListItem[] = [];
@@ -46,9 +50,9 @@ export class ExtensionRepository {
       }
       return id;
     };
-    table.forEach(l => {
+    table.slice(0, 256).forEach(l => {
       const entries = l.split('|').map((l) => l.trim()).filter(e => !!e);
-      if (entries.length == 0) {
+      if (entries.length < 4) {
         return;
       }
 
@@ -64,8 +68,42 @@ export class ExtensionRepository {
   }
 
   public async fetchList(): Promise<ExtensionListItem[]> {
-    const res = await (await fetch(Config.Extensions.repositoryUrl)).text();
-    this.extensionsList = this.repoMD(res);
+    const repositoryUrl = new URL(Config.Extensions.repositoryUrl);
+    if (repositoryUrl.protocol !== 'https:') {
+      throw new Error('The extension repository must use HTTPS');
+    }
+    const response = await fetch(repositoryUrl, {
+      redirect: 'follow',
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!response.ok || !response.body) {
+      throw new Error(`Could not download extension repository: HTTP ${response.status}`);
+    }
+    if (new URL(response.url).protocol !== 'https:') {
+      throw new Error('The extension repository redirected to an insecure URL');
+    }
+    const advertisedSize = Number(response.headers.get('content-length') || 0);
+    if (advertisedSize > this.MAX_REPOSITORY_BYTES) {
+      throw new Error('The extension repository is too large');
+    }
+
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let bytes = 0;
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) {
+        break;
+      }
+      bytes += value.byteLength;
+      if (bytes > this.MAX_REPOSITORY_BYTES) {
+        await reader.cancel();
+        throw new Error('The extension repository is too large');
+      }
+      chunks.push(value);
+    }
+    const text = Buffer.concat(chunks.map(chunk => Buffer.from(chunk))).toString('utf8');
+    this.extensionsList = this.repoMD(text);
     this.lastUpdate = new Date().getTime();
     return this.extensionsList;
   }

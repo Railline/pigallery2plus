@@ -53,6 +53,8 @@ export class EmailMessenger extends Messenger<{
       port: Config.Messaging.Email.smtp.port,
       secure: Config.Messaging.Email.smtp.secure,
       requireTLS: Config.Messaging.Email.smtp.requireTLS,
+      disableFileAccess: true,
+      disableUrlAccess: true,
       auth: {
         user: Config.Messaging.Email.smtp.user,
         pass: Config.Messaging.Email.smtp.password
@@ -110,7 +112,9 @@ export class EmailMessenger extends Messenger<{
       to: mailSettings.emailTo,
       subject: mailSettings.emailSubject,
       text: `${Config.Server.applicationTitle}\n\n${mailSettings.emailText || ''}\n\n${links.join('\n')}`,
-      html: htmlStart + htmlMiddle + htmlEnd
+      html: htmlStart + htmlMiddle + htmlEnd,
+      disableFileAccess: true,
+      disableUrlAccess: true,
     });
   }
 }

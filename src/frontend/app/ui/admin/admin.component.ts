@@ -4,7 +4,7 @@ import {UserRoles} from '../../../../common/entities/UserDTO';
 import {NotificationService} from '../../model/notification.service';
 import {NotificationType} from '../../../../common/entities/NotificationDTO';
 import {NavigationService} from '../../model/navigation.service';
-import { ViewportScroller, NgIf, NgFor, AsyncPipe, JsonPipe, DatePipe } from '@angular/common';
+import { ViewportScroller, AsyncPipe, JsonPipe, DatePipe } from '@angular/common';
 import {ConfigStyle, SettingsService} from '../settings/settings.service';
 import {ConfigPriority} from '../../../../common/config/public/ClientConfig';
 import {WebConfig} from '../../../../common/config/private/WebConfig';
@@ -47,25 +47,23 @@ interface ActivityAuditEntry {
     templateUrl: './admin.component.html',
     styleUrls: ['./admin.component.css'],
     imports: [
-        FrameComponent,
-        NgIf,
-        NgFor,
-        PopoverDirective,
-        BsDropdownDirective,
-        BsDropdownToggleDirective,
-        BsDropdownMenuDirective,
-        NgIconComponent,
-        TemplateComponent,
-        GalleryStatisticComponent,
-        UsersComponent,
-        SharingsListComponent,
-        ExtensionInstallerComponent,
-        AsyncPipe,
-        JsonPipe,
-        DatePipe,
-        StringifyEnum,
-        FormsModule,
-    ]
+    FrameComponent,
+    PopoverDirective,
+    BsDropdownDirective,
+    BsDropdownToggleDirective,
+    BsDropdownMenuDirective,
+    NgIconComponent,
+    TemplateComponent,
+    GalleryStatisticComponent,
+    UsersComponent,
+    SharingsListComponent,
+    ExtensionInstallerComponent,
+    AsyncPipe,
+    JsonPipe,
+    DatePipe,
+    StringifyEnum,
+    FormsModule
+]
 })
 export class AdminComponent implements OnInit, AfterViewInit {
   @ViewChildren('setting') settingsComponents: QueryList<ISettingsComponent>;

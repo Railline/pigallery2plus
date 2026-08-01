@@ -5,11 +5,21 @@ import {ProjectPath} from '../../../../../src/backend/ProjectPath';
 import {Utils} from '../../../../../src/common/Utils';
 import {DatabaseType} from '../../../../../src/common/config/private/PrivateConfig';
 import {DiskManager} from '../../../../../src/backend/model/fileaccess/DiskManager';
+import {PhotoProcessing} from '../../../../../src/backend/model/fileaccess/fileprocessing/PhotoProcessing';
+import {VideoProcessing} from '../../../../../src/backend/model/fileaccess/fileprocessing/VideoProcessing';
+import * as fs from 'fs';
 
 declare const before: any;
 declare const afterEach: any;
 
 describe('DiskMangerWorker', () => {
+  const expectedMediaNames = (folder: string): string[] => fs
+    .readdirSync(folder, {withFileTypes: true})
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name)
+    .filter((name) => PhotoProcessing.isPhoto(name) || VideoProcessing.isVideo(name))
+    .sort();
+
   // loading default settings (this might have been changed by other tests)
   before(() => {
     Config.loadSync();
@@ -27,9 +37,8 @@ describe('DiskMangerWorker', () => {
     Config.Media.folder = path.join(__dirname, '/../../../assets');
     ProjectPath.ImageFolder = path.join(__dirname, '/../../../assets');
     const dir = await DiskManager.scanDirectory('/');
-    // should match the number of media (photo/video) files in the assets folder
-    // TODO: make this test less flaky. Every time a new image is added to the folder, it fails.
-    expect(dir.media.length).to.be.equals(18);
+    expect(dir.media.map((media) => media.name).sort())
+      .to.deep.equal(expectedMediaNames(ProjectPath.ImageFolder));
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const expected = require(path.join(__dirname, '/../../../assets/test image öüóőúéáű-.,.json'));
     const i = dir.media.findIndex(m => m.name === 'test image öüóőúéáű-.,.jpg');
@@ -92,7 +101,8 @@ describe('DiskMangerWorker', () => {
       ProjectPath.ImageFolder = path.join(__dirname, '/../../../assets');
       Config.Indexing.excludeFilenameList = [];
       const dir = await DiskManager.scanDirectory('/');
-      expect(dir.media.length).to.be.equals(18);
+      expect(dir.media.map((media) => media.name).sort())
+        .to.deep.equal(expectedMediaNames(ProjectPath.ImageFolder));
     });
   });
 });

@@ -134,7 +134,7 @@ Build your own extensions. Mostly server-side changes are supported with minimal
 ## Detailed Feature List
 
 - **Supported Formats**:
-    - Images: `jpg, jpeg, jpe, webp, png, gif, svg, dng*, arw*, heic*` (depends on the docker container's vips build)
+    - Images: `jpg, jpeg, jpe, webp, png, gif, svg, dng*, arw*, heic*` (thumbnail support depends on the active Sharp/libvips build; unsupported formats are disabled at startup)
     - Videos: `mp4, ogg, ogv, webm`
 - **Rendering directories as is**:
     - Recursive subdirectories listing.

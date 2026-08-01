@@ -5,6 +5,7 @@ import {UploadManager} from '../../../../src/backend/model/UploadManager';
 import {ProjectPath} from '../../../../src/backend/ProjectPath';
 import {Config} from '../../../../src/common/config/private/Config';
 import {ObjectManagers} from '../../../../src/backend/model/ObjectManagers';
+import {FileAlreadyExists} from '../../../../src/backend/exceptions/FileAlreadyExists';
 
 declare const describe: any;
 declare const before: any;
@@ -46,6 +47,35 @@ describe('UploadManager', () => {
     const savedPath = path.join(testDir, 'test_subdir', 'test.jpg');
     expect(fs.existsSync(savedPath)).to.be.true;
     expect(fs.readFileSync(savedPath).toString()).to.equal('test image content');
+  });
+
+  it('should save a disk-backed upload and remove its staging file', async () => {
+    const stagedPath = path.join(testDir, 'staged-upload');
+    fs.writeFileSync(stagedPath, 'disk backed content');
+    const file: any = {
+      originalname: 'disk-backed.jpg',
+      path: stagedPath,
+    };
+
+    await uploadManager.saveFile('disk_test', file);
+
+    const savedPath = path.join(testDir, 'disk_test', 'disk-backed.jpg');
+    expect(fs.readFileSync(savedPath, 'utf8')).to.equal('disk backed content');
+    expect(fs.existsSync(stagedPath)).to.be.false;
+  });
+
+  it('should atomically reject concurrent uploads with the same name', async () => {
+    const first: any = {originalname: 'race.jpg', buffer: Buffer.from('first')};
+    const second: any = {originalname: 'race.jpg', buffer: Buffer.from('second')};
+
+    const results = await Promise.allSettled([
+      uploadManager.saveFile('race_test', first),
+      uploadManager.saveFile('race_test', second),
+    ]);
+
+    expect(results.filter(result => result.status === 'fulfilled')).to.have.lengthOf(1);
+    const rejected = results.find(result => result.status === 'rejected') as PromiseRejectedResult;
+    expect(rejected.reason).to.be.instanceOf(FileAlreadyExists);
   });
 
   it('should throw error for unsupported file', async () => {

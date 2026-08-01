@@ -39,9 +39,12 @@ export class SessionManager {
 
   public async buildContext(user: ContextUser): Promise<SessionContext> {
     const context = new SessionContext();
-    context.user = user;
+    // cookie-session signs its payload but does not encrypt it. Never persist the
+    // database entity (and especially its password hash) in the client cookie.
+    context.user = {...user};
+    delete context.user.password;
     context.user.projectionKey = SessionManager.NO_PROJECTION_KEY;
-    let finalQuery = this.getQueryForUser(user);
+    let finalQuery = this.getQueryForUser(context.user);
 
     if (finalQuery) {
       // Build the Brackets-based query

@@ -37,7 +37,7 @@ import {Subscription} from 'rxjs';
 import {MarkerFactory} from '../MarkerFactory';
 import {ionImageOutline, ionSpeedometerOutline, ionTimeOutline, ionTrailSignOutline, ionWarningOutline} from '@ng-icons/ionicons';
 import {LeafletControlLayersConfig, LeafletModule} from '@bluehalo/ngx-leaflet';
-import {NgIf} from '@angular/common';
+
 import {NgIconComponent} from '@ng-icons/core';
 import {DurationPipe} from '../../../../pipes/DurationPipe';
 import {ActivatedRoute, Params, Router} from '@angular/router';
@@ -51,9 +51,8 @@ import {QueryService} from '../../../../model/query.service';
   templateUrl: './lightbox.map.gallery.component.html',
   imports: [
     LeafletModule,
-    NgIf,
-    NgIconComponent,
-  ]
+    NgIconComponent
+]
 })
 export class GalleryMapLightboxComponent implements OnChanges, OnDestroy {
   @Input() photos: PhotoDTO[];
@@ -259,7 +258,7 @@ export class GalleryMapLightboxComponent implements OnChanges, OnDestroy {
   }
 
 
-  @HostListener('window:resize', ['$event'])
+  @HostListener('window:resize')
   async onResize(): Promise<void> {
     this.lightboxDimension = {
       top: 0,

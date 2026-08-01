@@ -2,7 +2,7 @@ import {Component, Input, OnInit} from '@angular/core';
 import {ResponseSharingDTO} from '../../../../../common/entities/SharingDTO';
 import {SettingsService} from '../settings.service';
 import {ShareService} from '../../gallery/share.service';
-import { NgIf, NgFor, DatePipe } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import { NgIconComponent } from '@ng-icons/core';
 import { StringifySearchQuery } from '../../../pipes/StringifySearchQuery';
 import {FormsModule} from '@angular/forms';
@@ -17,7 +17,7 @@ import {NotificationService} from '../../../model/notification.service';
     selector: 'app-settigns-sharings-list',
     templateUrl: './sharings-list.component.html',
     styleUrls: ['./sharings-list.component.css'],
-    imports: [NgIf, NgFor, NgIconComponent, DatePipe, StringifySearchQuery, FormsModule]
+    imports: [NgIconComponent, DatePipe, StringifySearchQuery, FormsModule]
 })
 export class SharingsListComponent implements OnInit {
 
@@ -28,8 +28,10 @@ export class SharingsListComponent implements OnInit {
   public editExpiresAt = '';
   public editForever = false;
   public editRandomUrl = '';
+  public editRandomUrlUnavailable = '';
   public editError = '';
   public saving = false;
+  public loading = true;
 
 
   constructor(public sharingService: ShareService,
@@ -40,7 +42,7 @@ export class SharingsListComponent implements OnInit {
 
 
   ngOnInit(): void {
-    this.getSharingList();
+    void this.getSharingList();
   }
 
   get Enabled(): boolean {
@@ -48,8 +50,12 @@ export class SharingsListComponent implements OnInit {
   }
 
   async deleteSharing(sharing: ResponseSharingDTO): Promise<void> {
-    await this.sharingService.deleteSharing(sharing);
-    await this.getSharingList();
+    try {
+      await this.sharingService.deleteSharing(sharing);
+      await this.getSharingList();
+    } catch (e) {
+      this.notification.error((e as Error)?.message || e as string, $localize`Sharing error`);
+    }
   }
 
   startEdit(share: ResponseSharingDTO): void {
@@ -58,6 +64,7 @@ export class SharingsListComponent implements OnInit {
     this.editForever = share.expires > new Date(9000, 0, 1).getTime();
     this.editExpiresAt = this.editForever ? '' : this.toLocalDateTimeInput(share.expires);
     this.editError = '';
+    this.editRandomUrlUnavailable = '';
     this.saving = false;
     this.updateRandomUrlPreview();
   }
@@ -68,6 +75,7 @@ export class SharingsListComponent implements OnInit {
     this.editExpiresAt = '';
     this.editForever = false;
     this.editRandomUrl = '';
+    this.editRandomUrlUnavailable = '';
     this.editError = '';
     this.saving = false;
   }
@@ -78,9 +86,13 @@ export class SharingsListComponent implements OnInit {
     if (!this.editingShare) {
       return;
     }
+    if (Config.Sharing.passwordRequired || this.editingShare.passwordProtected) {
+      this.editRandomUrlUnavailable = $localize`Password-protected shares cannot be used as public random links.`;
+      return;
+    }
     try {
-      const query = this.parseEditQuery();
-      this.editRandomUrl = this.getRandomUrl(this.editingShare, query);
+      this.parseEditQuery();
+      this.editRandomUrl = this.getRandomUrl(this.editingShare);
     } catch (e) {
       this.editError = (e as Error)?.message || e as string;
     }
@@ -112,10 +124,11 @@ export class SharingsListComponent implements OnInit {
     }
   }
 
-  getRandomUrl(share: ResponseSharingDTO, query: SearchQueryDTO = share.searchQuery): string {
+  getRandomUrl(share: ResponseSharingDTO): string {
     return Utils.concatUrls(
       Config.Server.publicUrl,
-      '/pgapi/gallery/random-link/',
+      Config.Server.apiPath,
+      '/gallery/random-link/',
       encodeURIComponent(share.sharingKey)
     );
   }
@@ -148,13 +161,16 @@ export class SharingsListComponent implements OnInit {
   }
 
   private async getSharingList(): Promise<void> {
+    this.loading = true;
     try {
       this.shares = this.adminMode ?
         await this.sharingService.getSharingList() :
         await this.sharingService.getOwnSharingList();
     } catch (err) {
       this.shares = [];
-      throw err;
+      this.notification.error((err as Error)?.message || err as string, $localize`Could not load sharing links`);
+    } finally {
+      this.loading = false;
     }
   }
 

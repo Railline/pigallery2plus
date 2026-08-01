@@ -81,15 +81,25 @@ export class UploadManager {
 
     const fullFilePath = UploadManager.safeJoin(fullDirPath, safeName);
 
-    if (fs.existsSync(fullFilePath)) {
-      throw new FileAlreadyExists('File already exists: ' + fullFilePath, file.originalname);
-    }
-
     if (!fs.existsSync(fullDirPath)) {
       await fs.promises.mkdir(fullDirPath, {recursive: true});
     }
 
-    await fs.promises.writeFile(fullFilePath, file.buffer);
+    try {
+      if (file.path) {
+        await fs.promises.copyFile(file.path, fullFilePath, fs.constants.COPYFILE_EXCL);
+        await fs.promises.unlink(file.path).catch((): void => undefined);
+      } else if (file.buffer) {
+        await fs.promises.writeFile(fullFilePath, file.buffer, {flag: 'wx'});
+      } else {
+        throw new Error('Uploaded file has no content');
+      }
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'EEXIST') {
+        throw new FileAlreadyExists('File already exists: ' + fullFilePath, file.originalname);
+      }
+      throw e;
+    }
   }
 
   private isSupportedExtension(ext: string): boolean {

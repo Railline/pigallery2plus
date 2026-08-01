@@ -78,6 +78,8 @@ npm run test-backend
 npm run cypress:run
 ```
 
+The backend suite uses SQLite by default. To run the same SQLite + MariaDB matrix as CI, start MariaDB with the documented test credentials and use `TEST_MYSQL=true npm run test-backend`.
+
 ## License
 
 MIT, following the upstream PiGallery2 license.

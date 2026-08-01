@@ -24,7 +24,7 @@ To keep development organized, please follow our feature workflow and rule of th
    * Note: This process does not exit, so you need another terminal to run the next step.
 4. Build the backend `npm run build-backend`
    * This runs `tsc` that transpiles `.ts` files to `.js` so node can run them. 
-     * To rebuild on change run `tsc -w`
+     * To rebuild on change run `tsc -p tsconfig.backend.json -w`
    * Note: you can skip this test if you use and IDE that supports typescript (e.g.: webstorm, vscode)
 5. Run the server `npm start`
 

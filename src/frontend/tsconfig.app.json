@@ -3,9 +3,12 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "../../out-tsc/app",
-    "types": [],
+    "types": [
+      "leaflet.markercluster"
+    ],
     "target": "ES2022",
     "module": "ES2022",
+    "moduleResolution": "bundler",
   },
   "files": [
     "./main.ts",

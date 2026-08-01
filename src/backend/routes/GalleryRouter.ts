@@ -519,7 +519,6 @@ export class GalleryRouter {
       VersionMWs.injectGalleryVersion,
       GalleryMWs.getRandomImage,
       GalleryMWs.loadFile,
-      GalleryMWs.clearTemporaryRandomLinkContext,
       ServerTimingMWs.addServerTiming,
       RenderingMWs.renderFile
     );

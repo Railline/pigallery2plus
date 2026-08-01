@@ -41,8 +41,23 @@ describe('SessionManager', (sqlHelper: DBTestHelper) => {
 
       // Verify the context
       expect(context).to.not.be.null;
-      expect(context.user).to.be.eql(user);
+      expect(context.user).to.deep.include({id: user.id, name: user.name, role: user.role});
       expect(context.projectionQuery).to.be.undefined;
+    });
+
+    it('should never persist a password hash in the client-side session context', async () => {
+      const sm = new SessionManager();
+      const user = new UserEntity();
+      user.id = 7;
+      user.name = 'secure-user';
+      user.role = UserRoles.User;
+      user.password = '$2b$09$sensitive-password-hash';
+
+      const context = await sm.buildContext(user);
+
+      expect(context.user.password).to.be.undefined;
+      expect(user.password).to.equal('$2b$09$sensitive-password-hash');
+      expect(context.user).to.not.equal(user);
     });
 
     it('should create a context with allowQuery and set projectionQuery', async () => {
@@ -78,7 +93,7 @@ describe('SessionManager', (sqlHelper: DBTestHelper) => {
 
       // Verify the context
       expect(context).to.not.be.null;
-      expect(context.user).to.be.eql(user);
+      expect(context.user).to.deep.include({id: user.id, name: user.name, role: user.role});
       expect(context.projectionQuery).to.be.eql(mockProjectionQuery);
       expect(context.user.projectionKey).to.be.a('string').and.not.empty;
     });
@@ -119,7 +134,7 @@ describe('SessionManager', (sqlHelper: DBTestHelper) => {
 
       // Verify the context
       expect(context).to.not.be.null;
-      expect(context.user).to.be.eql(user);
+      expect(context.user).to.deep.include({id: user.id, name: user.name, role: user.role});
       expect(context.projectionQuery).to.be.eql(mockProjectionQuery);
       expect(context.user.projectionKey).to.be.a('string').and.not.empty;
       // Verify the blockQuery was not changed
@@ -179,7 +194,7 @@ describe('SessionManager', (sqlHelper: DBTestHelper) => {
 
       // Verify the context
       expect(context).to.not.be.null;
-      expect(context.user).to.be.eql(user);
+      expect(context.user).to.deep.include({id: user.id, name: user.name, role: user.role});
       expect(context.projectionQuery).to.be.eql(mockProjectionQuery);
       expect(context.user.projectionKey).to.be.a('string').and.not.empty;
       // Verify the blockQuery was not changed
@@ -357,7 +372,11 @@ describe('SessionManager', (sqlHelper: DBTestHelper) => {
       try {
         const sessions = await sm.getAvailableUserSessions();
         expect(sessions).to.have.lengthOf(1);
-        expect(sessions[0].user).to.eql(unauthUser);
+        expect(sessions[0].user).to.deep.include({
+          id: unauthUser.id,
+          name: unauthUser.name,
+          role: unauthUser.role,
+        });
         expect(sessions[0].projectionQuery).to.be.undefined;
         expect(sessions[0].user.projectionKey).to.be.a('string').and.not.empty;
       } finally {
@@ -394,8 +413,11 @@ describe('SessionManager', (sqlHelper: DBTestHelper) => {
       try {
         const sessions = await sm.getAvailableUserSessions();
         expect(sessions).to.have.lengthOf(2);
-        const users = sessions.map(s => s.user);
-        expect(users).to.have.members([u1 as any, u2 as any]);
+        const users = sessions.map(s => ({id: s.user.id, name: s.user.name, role: s.user.role}));
+        expect(users).to.deep.equal([
+          {id: u1.id, name: u1.name, role: u1.role},
+          {id: u2.id, name: u2.name, role: u2.role},
+        ]);
         sessions.forEach(s => {
           expect(s.projectionQuery).to.be.undefined;
           expect(s.user.projectionKey).to.be.a('string').and.not.empty;
@@ -407,4 +429,3 @@ describe('SessionManager', (sqlHelper: DBTestHelper) => {
     });
   });
 });
-

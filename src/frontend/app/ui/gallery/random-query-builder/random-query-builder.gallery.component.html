@@ -15,20 +15,25 @@
     <div class="row">
       <div class="col">
         <input id="randomLink"
-               name="randomLink"
-               placeholder="link"
-               class="form-control input-md"
-               type="text"
-               [ngModel]="url">
+          name="randomLink"
+          placeholder="link"
+          class="form-control input-md"
+          type="text"
+          readonly
+          [ngModel]="url">
       </div>
       <div class="col-auto">
         <button id="copyButton" name="copyButton"
-                ngxClipboard [cbContent]="url"
-                (cbOnSuccess)="onCopy()"
-                class="btn btn-primary btn-block" i18n>Copy
+          ngxClipboard [cbContent]="url"
+          (cbOnSuccess)="onCopy()"
+          [disabled]="!url"
+          class="btn btn-primary btn-block" i18n>Copy
         </button>
       </div>
     </div>
+    @if (urlError) {
+      <div class="text-danger mt-2">{{urlError}}</div>
+    }
     <hr/>
     <form #searchPanelForm="ngForm" class="form-horizontal">
       <app-gallery-search-query-builder

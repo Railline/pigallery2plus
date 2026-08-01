@@ -10,8 +10,38 @@ import {SearchQueryDTO, SearchQueryTypes, TextSearch, TextSearchQueryMatchTypes}
 import * as crypto from 'crypto';
 import {SharingEntity} from '../model/database/enitites/SharingEntity';
 import {UserEntity} from '../model/database/enitites/UserEntity';
+import {AuthenticationMWs} from './user/AuthenticationMWs';
+import {PasswordHelper} from '../model/PasswordHelper';
 
 export class SharingMWs {
+  private static readonly MAX_VALIDITY_MS = 100 * 366 * 24 * 60 * 60 * 1000;
+
+  private static expiresFromValidity(valid: unknown): number {
+    if (valid === -1) {
+      return new Date(9999, 0, 1).getTime();
+    }
+    if (
+      typeof valid !== 'number' ||
+      !Number.isSafeInteger(valid) ||
+      valid <= 0 ||
+      valid > SharingMWs.MAX_VALIDITY_MS
+    ) {
+      throw new Error('Validity must be -1 or a positive duration of at most 100 years');
+    }
+    return Date.now() + valid;
+  }
+
+  private static validatePassword(password: unknown): void {
+    if (typeof password === 'undefined' || password === null || password === '') {
+      return;
+    }
+    if (
+      typeof password !== 'string' ||
+      Buffer.byteLength(password, 'utf8') > PasswordHelper.MAX_BCRYPT_PASSWORD_BYTES
+    ) {
+      throw new Error(`Password must not exceed ${PasswordHelper.MAX_BCRYPT_PASSWORD_BYTES} UTF-8 bytes`);
+    }
+  }
   public static async getSharing(
     req: Request,
     res: Response,
@@ -81,6 +111,13 @@ export class SharingMWs {
       }
       const createSharing: CreateSharingDTO = req.body.createSharing;
 
+      try {
+        SharingMWs.validatePassword(createSharing.password);
+        SharingMWs.expiresFromValidity(createSharing.valid);
+      } catch (e) {
+        return next(new ErrorDTO(ErrorCodes.INPUT_ERROR, (e as Error).message));
+      }
+
       if (Config.Sharing.passwordRequired && !createSharing.password) {
 
         return next(
@@ -119,10 +156,7 @@ export class SharingMWs {
         defaultSearchView: null,
         defaultDirectoryView: null,
         creator: req.session.context?.user as UserEntity, // only the user id is used
-        expires:
-          createSharing.valid >= 0 // if === -1 it's forever
-            ? Date.now() + createSharing.valid
-            : new Date(9999, 0, 1).getTime(), // never expire
+        expires: SharingMWs.expiresFromValidity(createSharing.valid),
         timeStamp: Date.now(),
       };
 
@@ -168,6 +202,15 @@ export class SharingMWs {
         );
       }
       const updateSharing: CreateSharingDTO = req.body.updateSharing;
+      try {
+        SharingMWs.validatePassword(updateSharing.password);
+        SharingMWs.expiresFromValidity(updateSharing.valid);
+      } catch (e) {
+        return next(new ErrorDTO(ErrorCodes.INPUT_ERROR, (e as Error).message));
+      }
+      if (!Number.isSafeInteger(updateSharing.id) || updateSharing.id <= 0) {
+        return next(new ErrorDTO(ErrorCodes.INPUT_ERROR, 'Invalid sharing id'));
+      }
       const directoryName = path.normalize(req.params['directory'] || '/');
 
       const searchQuery = updateSharing.searchQuery || ({
@@ -182,10 +225,7 @@ export class SharingMWs {
         searchQuery,
         sharingKey: '',
         creator: req.session.context?.user,
-        expires:
-          updateSharing.valid >= 0 // if === -1 its forever
-            ? Date.now() + updateSharing.valid
-            : new Date(9999, 0, 1).getTime(), // never expire
+        expires: SharingMWs.expiresFromValidity(updateSharing.valid),
         timeStamp: Date.now(),
       };
 
@@ -196,20 +236,21 @@ export class SharingMWs {
             : null;
       }
 
-      if (updateSharing.defaultDirectoryView) {
-        sharing.defaultDirectoryView = updateSharing.defaultDirectoryView;
+      if (Object.prototype.hasOwnProperty.call(updateSharing, 'defaultDirectoryView')) {
+        sharing.defaultDirectoryView = updateSharing.defaultDirectoryView || null;
       }
-      if (updateSharing.defaultSearchView) {
-        sharing.defaultSearchView = updateSharing.defaultSearchView;
+      if (Object.prototype.hasOwnProperty.call(updateSharing, 'defaultSearchView')) {
+        sharing.defaultSearchView = updateSharing.defaultSearchView || null;
       }
 
 
       const forceUpdate = req.session.context.user.role >= UserRoles.Admin;
-      req.resultPipe =
-        await ObjectManagers.getInstance().SharingManager.updateSharing(
-          sharing,
-          forceUpdate
-        );
+      const updated = await ObjectManagers.getInstance().SharingManager.updateSharing(
+        sharing,
+        forceUpdate
+      );
+      req.resultPipe = updated;
+      AuthenticationMWs.invalidateSharing(updated.sharingKey);
       return next();
     } catch (err) {
       return next(
@@ -253,6 +294,7 @@ export class SharingMWs {
         await ObjectManagers.getInstance().SharingManager.deleteSharing(
           sharingKey
         );
+      AuthenticationMWs.invalidateSharing(sharingKey);
       req.resultPipe = 'ok';
       return next();
     } catch (err) {

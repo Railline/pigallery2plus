@@ -8,8 +8,7 @@ import {Logger} from '../../Logger';
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
 import * as exifr from 'exifr';
-import * as exifReader from 'exif-reader';
-import * as sharp from 'sharp';
+import ExifReader = require('exifreader');
 import {FfprobeData} from 'fluent-ffmpeg';
 import * as util from 'node:util';
 import * as path from 'path';
@@ -21,8 +20,6 @@ import {DateTags} from './MetadataCreationDate';
 const {imageSizeFromFile} = require('image-size/fromFile');
 const LOG_TAG = '[MetadataLoader]';
 const ffmpeg = FFmpegFactory.get();
-
-sharp.cache(false);
 
 export class MetadataLoader {
 
@@ -237,8 +234,19 @@ export class MetadataLoader {
           }
         } catch (err) {
           try {
-            const m = await sharp(fullPath, {failOnError: false}).metadata();
-            MetadataLoader.mapMetadata(metadata, this.mapExifReader(exifReader(m.exif)), true);
+            // ExifReader parses HEIF container metadata without decoding image
+            // pixels or disabling libheif's security limits.
+            const fallbackExif = await ExifReader.load(fullPath, {expanded: true});
+            MetadataLoader.mapMetadata(metadata, this.mapExifReader(fallbackExif), true);
+            const makerNote = (fallbackExif.exif as any)?.MakerNote?.value;
+            if (makerNote) {
+              const contentId = MetadataLoader.parseAppleMakerNoteContentId(
+                Buffer.from(makerNote as number[])
+              );
+              if (contentId) {
+                metadata.contentIdentifier = contentId;
+              }
+            }
           } catch (e) {
             // ignoring errors
           }
@@ -719,85 +727,59 @@ export class MetadataLoader {
     }
   }
 
-  private static mapExifReader(exif: exifReader.Exif): any {
+  private static mapExifReader(exif: ExifReader.ExpandedTags): any {
     if (!exif) {
       return {};
     }
 
-    const result: any = {};
-
-    // Map Image tags to ifd0 (this is where exifr puts TIFF/IFD0 data)
-    if (exif.Image) {
-      result.ifd0 = {...exif.Image};
-      // Convert Date objects to ISO strings for consistency with exifr
-      if (result.ifd0.DateTime instanceof Date) {
-        // Remove the 'Z' suffix and format as YYYY-MM-DD HH:MM:SS
-        const isoString = result.ifd0.DateTime.toISOString();
-        result.ifd0.DateTime = isoString.substring(0, 10) + ' ' + isoString.substring(11, 19);
+    const unwrap = (tag: any): any => {
+      const value = tag?.value;
+      if (!Array.isArray(value)) {
+        return value;
       }
+      if (value.length === 1) {
+        return value[0];
+      }
+      if (value.length === 2 && value.every((part: unknown) => typeof part === 'number')) {
+        return value[1] === 0 ? 0 : value[0] / value[1];
+      }
+      return value;
+    };
+    const tags = exif.exif || {};
+    const normalizedExif: any = {};
+    for (const [name, tag] of Object.entries(tags)) {
+      normalizedExif[name] = unwrap(tag);
     }
+    normalizedExif.ExifImageWidth = normalizedExif.ExifImageWidth ?? normalizedExif.PixelXDimension;
+    normalizedExif.ExifImageHeight = normalizedExif.ExifImageHeight ?? normalizedExif.PixelYDimension;
 
-    // Map Photo tags to exif (this is where exifr puts EXIF data)
-    if (exif.Photo) {
-      result.exif = {...exif.Photo};
-      // Convert Date objects to ISO strings without 'Z' suffix, format as YYYY-MM-DD HH:MM:SS
-      // The offset will be added from OffsetTimeOriginal/OffsetTimeDigitized by mapTimestampAndOffset
-      if (result.exif.DateTimeOriginal instanceof Date) {
-        const isoString = result.exif.DateTimeOriginal.toISOString();
-        result.exif.DateTimeOriginal = isoString.substring(0, 10) + ' ' + isoString.substring(11, 19);
-      }
-      if (result.exif.DateTimeDigitized instanceof Date) {
-        const isoString = result.exif.DateTimeDigitized.toISOString();
-        result.exif.DateTimeDigitized = isoString.substring(0, 10) + ' ' + isoString.substring(11, 19);
-      }
+    const result: any = {
+      ifd0: {
+        Make: normalizedExif.Make,
+        Model: normalizedExif.Model,
+        Orientation: normalizedExif.Orientation,
+        ImageDescription: normalizedExif.ImageDescription,
+        ImageWidth: normalizedExif.ImageWidth,
+        ImageHeight: normalizedExif.ImageHeight,
+        ModifyDate: normalizedExif.DateTime,
+      },
+      exif: normalizedExif,
+    };
+    if (exif.gps) {
+      result.gps = {
+        latitude: exif.gps.Latitude,
+        longitude: exif.gps.Longitude,
+        altitude: exif.gps.Altitude,
+      };
     }
-
-    // Map GPSInfo to both gps (with calculated decimal degrees) and exif (with raw data)
-    if (exif.GPSInfo) {
-      // Add raw GPS data to exif section (for fallback parsing in mapGPS)
-      if (!result.exif) {
-        result.exif = {};
-      }
-
-      // Copy GPS arrays to exif section for xmpExifGpsCoordinateToDecimalDegrees parsing
-      if (exif.GPSInfo.GPSLatitude) {
-        result.exif.GPSLatitude = exif.GPSInfo.GPSLatitude;
-      }
-      if (exif.GPSInfo.GPSLongitude) {
-        result.exif.GPSLongitude = exif.GPSInfo.GPSLongitude;
-      }
-
-      // Create gps section with decimal degrees (preferred by mapGPS)
-      result.gps = {};
-
-      // Convert GPS coordinates from [degrees, minutes, seconds] to decimal degrees
-      if (exif.GPSInfo.GPSLatitude && exif.GPSInfo.GPSLatitudeRef) {
-        const lat = exif.GPSInfo.GPSLatitude;
-        let latitude = lat[0] + lat[1] / 60 + lat[2] / 3600;
-        if (exif.GPSInfo.GPSLatitudeRef === 'S') {
-          latitude = -latitude;
-        }
-        result.gps.latitude = latitude;
-      }
-
-      if (exif.GPSInfo.GPSLongitude && exif.GPSInfo.GPSLongitudeRef) {
-        const lon = exif.GPSInfo.GPSLongitude;
-        let longitude = lon[0] + lon[1] / 60 + lon[2] / 3600;
-        if (exif.GPSInfo.GPSLongitudeRef === 'W') {
-          longitude = -longitude;
-        }
-        result.gps.longitude = longitude;
-      }
-
-      // Map altitude if present
-      if (exif.GPSInfo.GPSAltitude !== undefined) {
-        result.gps.altitude = exif.GPSInfo.GPSAltitude;
-        if (exif.GPSInfo.GPSAltitudeRef === 1) {
-          result.gps.altitude = -result.gps.altitude;
+    if (exif.xmp) {
+      result.xmp = {};
+      for (const [name, tag] of Object.entries(exif.xmp)) {
+        if (name !== '_raw') {
+          result.xmp[name] = unwrap(tag);
         }
       }
     }
-
     return result;
   }
 

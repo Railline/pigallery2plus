@@ -7,6 +7,10 @@ import {ContentWrapper} from '../../../../src/common/entities/ContentWrapper';
 import {MediaDTO} from '../../../../src/common/entities/MediaDTO';
 import {ParentDirectoryDTO} from '../../../../src/common/entities/DirectoryDTO';
 import {DatabaseType} from '../../../../src/common/config/private/PrivateConfig';
+import {ObjectManagers} from '../../../../src/backend/model/ObjectManagers';
+import {QueryParams} from '../../../../src/common/QueryParams';
+import {SearchQueryTypes} from '../../../../src/common/entities/SearchQueryDTO';
+import {ErrorCodes, ErrorDTO} from '../../../../src/common/entities/Error';
 
 declare const before: any;
 declare const describe: any;
@@ -48,6 +52,150 @@ describe('GalleryMWs', () => {
     Config.loadSync();
     Config.Database.type = DatabaseType.sqlite;
     Config.Extensions.enabled = false;
+  });
+
+  describe('search request hardening', () => {
+    it('should reject a parsed query containing unknown fields', (done: (err?: any) => void) => {
+      const req: any = {
+        params: {
+          searchQueryDTO: '{"t":104,"v":"x","unexpected":true}',
+        },
+      };
+
+      GalleryMWs.parseSearchQuery(req, null, ((err?: ErrorDTO) => {
+        try {
+          expect(err).to.be.instanceOf(ErrorDTO);
+          expect(err.code).to.equal(ErrorCodes.INPUT_ERROR);
+          expect(req.resultPipe).to.be.undefined;
+          done();
+        } catch (e) {
+          done(e);
+        }
+      }) as any);
+    });
+
+    it('should cap client-requested search pages to 1000 media', async () => {
+      const managers = ObjectManagers.getInstance();
+      const originalSearchManager = managers.SearchManager;
+      const previousEnabled = Config.Search.enabled;
+      const previousMax = Config.Search.maxMediaResult;
+      let capturedPaging: {offset: number; limit: number};
+
+      try {
+        Config.Search.enabled = true;
+        Config.Search.maxMediaResult = 10000;
+        managers.SearchManager = {
+          search: async (_context: unknown, _query: unknown, paging: {offset: number; limit: number}) => {
+            capturedPaging = paging;
+            return {
+              directories: [] as any[],
+              media: [] as any[],
+              metaFile: [] as any[],
+              resultOverflow: false,
+            };
+          },
+        } as any;
+        const req: any = {
+          resultPipe: {type: SearchQueryTypes.keyword, value: 'x'},
+          query: {
+            [QueryParams.gallery.mediaOffset]: '25',
+            [QueryParams.gallery.mediaLimit]: '999999999',
+          },
+          session: {context: {}},
+        };
+        let nextError: unknown;
+
+        await GalleryMWs.search(req, null, (err?: unknown) => {
+          nextError = err;
+        });
+
+        expect(nextError).to.be.undefined;
+        expect(capturedPaging).to.deep.equal({offset: 25, limit: 1000});
+      } finally {
+        managers.SearchManager = originalSearchManager;
+        Config.Search.enabled = previousEnabled;
+        Config.Search.maxMediaResult = previousMax;
+      }
+    });
+  });
+
+  describe('public random sharing links', () => {
+    it('should reject password-protected shares', async () => {
+      const managers = ObjectManagers.getInstance();
+      const originalSharingManager = managers.SharingManager;
+      const previousPasswordRequired = Config.Sharing.passwordRequired;
+      let statusCode: number;
+      let nextError: ErrorDTO;
+
+      try {
+        Config.Sharing.passwordRequired = false;
+        managers.SharingManager = {
+          findOne: async () => ({
+            sharingKey: 'secret-key',
+            expires: Date.now() + 10000,
+            password: 'password-hash',
+            searchQuery: {type: SearchQueryTypes.keyword, value: 'x'},
+          }),
+        } as any;
+        const req: any = {params: {sharingKey: 'secret-key'}, query: {}, session: {}};
+        const res: any = {status: (code: number) => statusCode = code};
+
+        await GalleryMWs.loadRandomLinkQuery(req, res, ((err?: ErrorDTO) => {
+          nextError = err;
+        }) as any);
+
+        expect(statusCode).to.equal(403);
+        expect(nextError?.code).to.equal(ErrorCodes.NOT_AUTHORISED);
+        expect(req.randomLinkContext).to.be.undefined;
+      } finally {
+        managers.SharingManager = originalSharingManager;
+        Config.Sharing.passwordRequired = previousPasswordRequired;
+      }
+    });
+
+    it('should keep the share ACL request-scoped without replacing the session', async () => {
+      const managers = ObjectManagers.getInstance();
+      const originalSharingManager = managers.SharingManager;
+      const originalSessionManager = managers.SessionManager;
+      const previousPasswordRequired = Config.Sharing.passwordRequired;
+      const existingContext = {user: {id: 42, name: 'user'}};
+      const randomContext = {user: {id: null as number, name: 'Guest', usedSharingKey: 'public-key'}};
+
+      try {
+        Config.Sharing.passwordRequired = false;
+        managers.SharingManager = {
+          findOne: async () => ({
+            sharingKey: 'public-key',
+            expires: Date.now() + 10000,
+            password: null as string,
+            creator: {id: 1},
+            searchQuery: {type: SearchQueryTypes.keyword, value: 'x'},
+          }),
+        } as any;
+        managers.SessionManager = {
+          buildAllowListForSharing: () => ({type: SearchQueryTypes.keyword, value: 'x'}),
+          buildContext: async () => randomContext,
+        } as any;
+        const req: any = {
+          params: {sharingKey: 'public-key'},
+          query: {},
+          session: {context: existingContext},
+        };
+        let nextError: unknown;
+
+        await GalleryMWs.loadRandomLinkQuery(req, {} as any, (err?: unknown) => {
+          nextError = err;
+        });
+
+        expect(nextError).to.be.undefined;
+        expect(req.session.context).to.equal(existingContext);
+        expect(req.randomLinkContext).to.equal(randomContext);
+      } finally {
+        managers.SharingManager = originalSharingManager;
+        managers.SessionManager = originalSessionManager;
+        Config.Sharing.passwordRequired = previousPasswordRequired;
+      }
+    });
   });
 
   describe('cleanUpGalleryResults - Live Photo pairing', () => {

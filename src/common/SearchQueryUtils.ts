@@ -13,6 +13,14 @@ import {
 import {SearchQueryParser} from './SearchQueryParser';
 import {Utils} from './Utils';
 
+const UNSAFE_OBJECT_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
+
+const assertSafeObjectKey = (key: string): void => {
+  if (UNSAFE_OBJECT_KEYS.has(key)) {
+    throw new Error(`Unsafe search query key: ${key}`);
+  }
+};
+
 export const SearchQueryUtils = {
   negate: (query: SearchQueryDTO): SearchQueryDTO => {
     query = Utils.clone(query);
@@ -62,6 +70,7 @@ export const SearchQueryUtils = {
         const out: Record<string, unknown> = {};
         const keys = Object.keys(value).sort();
         for (const k of keys) {
+          assertSafeObjectKey(k);
           const v = canonicalize(value[k]);
           if (v !== undefined) {
             out[k] = v;
@@ -119,6 +128,7 @@ export const SearchQueryUtils = {
     if (val && typeof val === 'object') {
       const out: Record<string, unknown> = {};
       for (const k of Object.keys(val)) {
+        assertSafeObjectKey(k);
         const v = SearchQueryUtils.stripDefault(val[k]);
         if (k === 'negate' && v === false) {
           // drop negate:false
@@ -194,6 +204,7 @@ export const SearchQueryUtils = {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const res: any = {};
         for (const key of Object.keys(obj)) {
+          assertSafeObjectKey(key);
           if (key === 'negate' && obj[key] === false) {
             continue;
           }
@@ -228,7 +239,9 @@ export const SearchQueryUtils = {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const res: any = {};
         for (const key of Object.keys(obj)) {
+          assertSafeObjectKey(key);
           let unshortenedKey = map[key] || key;
+          assertSafeObjectKey(unshortenedKey);
           if (unshortenedKey === 'text' && obj.t !== undefined && !TextSearchQueryTypes.includes(obj.t)) {
             // If it's not a text search, 'v' should map to 'value'
             if (RangeSearchQueryTypes.includes(obj.t)) {
@@ -247,4 +260,3 @@ export const SearchQueryUtils = {
 
   }
 };
-

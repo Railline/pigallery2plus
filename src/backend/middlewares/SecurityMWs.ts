@@ -41,8 +41,7 @@ export class SecurityMWs {
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
     res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
 
-    const forwardedProto = (req.headers['x-forwarded-proto'] || '').toString().split(',')[0].trim();
-    if (req.secure || forwardedProto === 'https' || Config.Server.publicUrl.startsWith('https://')) {
+    if (req.secure || Config.Server.publicUrl.startsWith('https://')) {
       res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     }
     return next();
@@ -65,6 +64,11 @@ export class SecurityMWs {
       return next();
     }
 
+    if ((req.get('sec-fetch-site') || '').toLowerCase() === 'cross-site') {
+      res.status(403);
+      return next(new ErrorDTO(ErrorCodes.NOT_AUTHORISED, 'Cross-site request rejected'));
+    }
+
     const originHeader = req.get('origin') || req.get('referer');
     if (!originHeader) {
       return next();
@@ -72,18 +76,17 @@ export class SecurityMWs {
 
     try {
       const origin = new URL(originHeader);
-      const allowedHosts = new Set<string>();
-      if (req.headers.host) {
-        allowedHosts.add(req.headers.host.toString().toLowerCase());
-      }
-      if (req.headers['x-forwarded-host']) {
-        allowedHosts.add(req.headers['x-forwarded-host'].toString().split(',')[0].trim().toLowerCase());
-      }
+      const allowedOrigins = new Set<string>();
       if (Config.Server.publicUrl) {
-        allowedHosts.add(new URL(Config.Server.publicUrl).host.toLowerCase());
+        allowedOrigins.add(new URL(Config.Server.publicUrl).origin.toLowerCase());
+      } else {
+        const host = req.get('host');
+        if (host) {
+          allowedOrigins.add(new URL(`${req.protocol}://${host}`).origin.toLowerCase());
+        }
       }
 
-      if (allowedHosts.has(origin.host.toLowerCase())) {
+      if (allowedOrigins.has(origin.origin.toLowerCase())) {
         return next();
       }
     } catch (e) {

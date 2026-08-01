@@ -1,11 +1,12 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 import {Config} from '../common/config/private/Config';
-import * as express from 'express';
-import * as cookieParser from 'cookie-parser';
+import express = require('express');
+import cookieParser = require('cookie-parser');
 import * as _http from 'http';
 import {Server as HttpServer} from 'http';
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
-import * as locale from 'locale';
+import locale = require('locale');
 import {ObjectManagers} from './model/ObjectManagers';
 import {Logger} from './Logger';
 import {LoggerRouter} from './routes/LoggerRouter';
@@ -21,7 +22,6 @@ import {ServerConfig} from '../common/config/private/PrivateConfig';
 import {SecurityMWs} from './middlewares/SecurityMWs';
 import {ActivityAuditMWs} from './middlewares/ActivityAuditMWs';
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const session = require('cookie-session');
 
 declare const process: NodeJS.Process;
@@ -59,6 +59,8 @@ export class Server {
   async init(listen = true): Promise<void> {
     this.app = express();
     this.app.disable('x-powered-by');
+    // Configure trusted proxies before any middleware reads req.ip/protocol.
+    this.app.set('trust proxy', Server.getAppTrustProxyConfig());
     LoggerRouter.route(this.app);
     this.app.set('view engine', 'ejs');
 
@@ -95,6 +97,13 @@ export class Server {
         secure: Config.Server.publicUrl.startsWith('https://'),
       })
     );
+    this.app.use((req, res, next): void => {
+      // Support TLS-terminating trusted proxies even when publicUrl is omitted.
+      if (req.secure) {
+        req.sessionOptions.secure = true;
+      }
+      next();
+    });
 
     /**
      * Parse parameters in POST
@@ -120,11 +129,6 @@ export class Server {
 
     // Get PORT from environment and store in Express.
     this.app.set('port', Config.Server.port);
-
-    // Set express 'trust proxy' setting to extract Remote Client IP
-    // from optional reverse proxies trusted headers
-    // See https://expressjs.com/en/guide/behind-proxies.html
-    this.app.set('trust proxy', Server.getAppTrustProxyConfig());
 
     // Create HTTP server.
     this.server = _http.createServer(this.app);
@@ -239,5 +243,3 @@ export class Server {
     });
   }
 }
-
-

@@ -1,6 +1,6 @@
 import * as path from 'path';
 import {promises as fsp} from 'fs';
-import * as archiver from 'archiver';
+import archiver = require('archiver');
 import {NextFunction, Request, Response} from 'express';
 import {ErrorCodes, ErrorDTO} from '../../common/entities/Error';
 import {ParentDirectoryDTO,} from '../../common/entities/DirectoryDTO';
@@ -18,10 +18,11 @@ import {LocationLookupException} from '../exceptions/LocationLookupException';
 import {ServerTime} from './ServerTimingMWs';
 import {Logger} from '../Logger';
 import {UserRoles} from '../../common/entities/UserDTO';
-import {ContextUser} from '../model/SessionContext';
+import {ContextUser, SessionContext} from '../model/SessionContext';
 import {SortingMethod} from '../../common/entities/SortingMethods';
 
 export class GalleryMWs {
+  private static readonly MAX_SEARCH_PAGE_SIZE = 1000;
   private static readonly RANDOM_CACHE_TTL = 15 * 60 * 1000;
   private static readonly RANDOM_CACHE_MAX = 64;
   private static readonly RANDOM_BATCH_SIZE = 15;
@@ -64,6 +65,18 @@ export class GalleryMWs {
             )
           );
         }
+      }
+
+      try {
+        SearchQueryUtils.validateSearchQuery(query);
+      } catch (validationError) {
+        return next(
+          new ErrorDTO(
+            ErrorCodes.INPUT_ERROR,
+            'Invalid search query: ' + (validationError as Error).message,
+            validationError
+          )
+        );
       }
 
       // Store the parsed query for use by subsequent middlewares
@@ -446,7 +459,10 @@ export class GalleryMWs {
       const paging = Number.isFinite(mediaLimit) && mediaLimit > 0
         ? {
           offset: Number.isFinite(mediaOffset) && mediaOffset > 0 ? mediaOffset : 0,
-          limit: Math.min(mediaLimit, Math.max(Config.Search.maxMediaResult, mediaLimit)),
+          limit: Math.min(
+            mediaLimit,
+            Math.max(1, Math.min(Config.Search.maxMediaResult, GalleryMWs.MAX_SEARCH_PAGE_SIZE))
+          ),
         }
         : undefined;
       const result = await ObjectManagers.getInstance().SearchManager.search(
@@ -523,8 +539,9 @@ export class GalleryMWs {
       }
 
       const query: SearchQueryDTO = req.resultPipe as any;
+      const context = req.randomLinkContext || req.session.context;
       const started = Date.now();
-      const cacheKey = GalleryMWs.getRandomCacheKey(req, query);
+      const cacheKey = GalleryMWs.getRandomCacheKey(req, context, query);
       let cache = GalleryMWs.randomMediaPathCache.get(cacheKey);
       const now = Date.now();
 
@@ -544,7 +561,7 @@ export class GalleryMWs {
       if (cache.paths.length <= GalleryMWs.RANDOM_REFILL_THRESHOLD) {
         const sqlStarted = Date.now();
         const paths = await ObjectManagers.getInstance().SearchManager.getRandomMediaPaths(
-          req.session.context,
+          context,
           query,
           GalleryMWs.RANDOM_BATCH_SIZE,
           true
@@ -576,12 +593,11 @@ export class GalleryMWs {
 
       const selected = cache.paths.shift();
       req.params['mediaPath'] = selected;
-      Logger.info(
+      Logger.silly(
         '[RandomPhoto]',
         'selected',
         'totalMs=' + (Date.now() - started),
-        'remaining=' + cache.paths.length,
-        'path=' + selected
+        'remaining=' + cache.paths.length
       );
       return next();
     } catch (e) {
@@ -644,17 +660,23 @@ export class GalleryMWs {
       if (!sharing || sharing.expires < Date.now() || !sharing.searchQuery) {
         return next(new ErrorDTO(ErrorCodes.INPUT_ERROR, 'Sharing link not found'));
       }
-      if (!req.session.context) {
-        const user = {
-          name: 'Guest',
-          role: UserRoles.LimitedGuest,
-          usedSharingKey: sharing.sharingKey,
-          overrideAllowBlockList: true,
-          allowQuery: ObjectManagers.getInstance().SessionManager.buildAllowListForSharing(sharing)
-        } as ContextUser;
-        req.session.context = await ObjectManagers.getInstance().SessionManager.buildContext(user);
-        (req as any).temporaryRandomLinkContext = true;
+      // A random-link endpoint cannot prompt for a password. Exposing a regular
+      // protected share here would silently bypass its authentication.
+      if (Config.Sharing.passwordRequired || Boolean(sharing.password)) {
+        res.status(403);
+        return next(new ErrorDTO(ErrorCodes.NOT_AUTHORISED, 'Password-protected sharing links cannot be used as public random links'));
       }
+      const user = {
+        id: null,
+        name: 'Guest',
+        role: UserRoles.LimitedGuest,
+        usedSharingKey: sharing.sharingKey,
+        overrideAllowBlockList: true,
+        allowQuery: ObjectManagers.getInstance().SessionManager.buildAllowListForSharing(sharing)
+      } as ContextUser;
+      // Keep the share-specific ACL request-scoped. Mutating req.session here
+      // could persist guest privileges if a later middleware fails.
+      req.randomLinkContext = await ObjectManagers.getInstance().SessionManager.buildContext(user);
       req.resultPipe = sharing.searchQuery;
       return next();
     } catch (e) {
@@ -667,20 +689,8 @@ export class GalleryMWs {
     }
   }
 
-  public static clearTemporaryRandomLinkContext(
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ): void {
-    if ((req as any).temporaryRandomLinkContext) {
-      delete req.session.context;
-      delete (req as any).temporaryRandomLinkContext;
-    }
-    return next();
-  }
-
-  private static getRandomCacheKey(req: Request, query: SearchQueryDTO): string {
-    const user = req.session.context?.user;
+  private static getRandomCacheKey(req: Request, context: SessionContext, query: SearchQueryDTO): string {
+    const user = context?.user;
     const projection = user?.projectionKey || '';
     const sharingKey = user?.usedSharingKey || req.query[QueryParams.gallery.sharingKey_query] || '';
     return [

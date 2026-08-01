@@ -3,9 +3,8 @@ import * as fs from 'fs';
 import {promises as fsp} from 'fs';
 import * as path from 'path';
 import * as util from 'util';
-import * as zip from 'gulp-zip';
+import zip = require('gulp-zip');
 import * as ts from 'gulp-typescript';
-import * as sourcemaps from 'gulp-sourcemaps';
 import * as xml2js from 'xml2js';
 import * as child_process from 'child_process';
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -20,7 +19,7 @@ const execPr = util.promisify(child_process.exec);
 const execFilePr = util.promisify(child_process.execFile);
 
 const translationFolder = 'translate';
-const tsBackendProject = ts.createProject('tsconfig.json');
+const tsBackendProject = ts.createProject('tsconfig.backend.json');
 declare const process: NodeJS.Process;
 
 const translationLanguages = (list: string[]): string => {
@@ -53,9 +52,7 @@ gulp.task('build-backend', (): any =>
     .src(['src/common/**/*.ts', 'src/backend/**/*.ts', 'benchmark/**/*.ts'], {
       base: '.'
     })
-    .pipe(sourcemaps.init())
     .pipe(tsBackendProject())
-    .pipe(sourcemaps.write('.', {includeContent: false}))
     .pipe(gulp.dest('./release'))
 );
 

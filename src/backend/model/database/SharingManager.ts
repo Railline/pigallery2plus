@@ -42,6 +42,9 @@ export class SharingManager {
     const sharing = await connection
       .getRepository(SharingEntity)
       .findOneBy({sharingKey});
+    if (!sharing) {
+      throw new Error('Sharing link not found');
+    }
     await connection.getRepository(SharingEntity).remove(sharing);
   }
 
@@ -99,10 +102,11 @@ export class SharingManager {
     if (sharing.password) {
       sharing.password = PasswordHelper.cryptPassword(sharing.password);
     }
-    if (sharing.searchQuery) {
-      SearchQueryUtils.validateSearchQuery(sharing.searchQuery);
-      sharing.searchQuery = SearchQueryUtils.sortQuery(sharing.searchQuery);
+    if (!sharing.searchQuery) {
+      throw new Error('Sharing search query is required');
     }
+    SearchQueryUtils.validateSearchQuery(sharing.searchQuery);
+    sharing.searchQuery = SearchQueryUtils.sortQuery(sharing.searchQuery);
     if (sharing.defaultSearchView) {
       SearchQueryUtils.validateSearchQuery(sharing.defaultSearchView);
       sharing.defaultSearchView = SearchQueryUtils.sortQuery(sharing.defaultSearchView);
@@ -116,11 +120,15 @@ export class SharingManager {
   ): Promise<SharingEntity> {
     const connection = await SQLConnection.getConnection();
 
-    const creator = await SharingManager.resolveCreator(inSharing.creator);
-    const sharing = await connection.getRepository(SharingEntity).findOneBy({
-      id: inSharing.id,
-      creator: creator.id as unknown,
-    });
+    const repository = connection.getRepository(SharingEntity);
+    const sharing = forceUpdate === true
+      ? await repository.findOneBy({id: inSharing.id})
+      : await repository.findOne({
+        where: {
+          id: inSharing.id,
+          creator: {id: (await SharingManager.resolveCreator(inSharing.creator)).id},
+        },
+      });
 
     if (!sharing) {
       throw new Error('Sharing link not found for current user');
@@ -139,17 +147,28 @@ export class SharingManager {
     } else {
       sharing.password = PasswordHelper.cryptPassword(inSharing.password);
     }
-    // allow updating searchQuery and canonicalize it
-    sharing.searchQuery = SearchQueryUtils.sortQuery(inSharing.searchQuery);
-    if (inSharing.defaultSearchView) {
-      SearchQueryUtils.validateSearchQuery(inSharing.defaultSearchView);
-      sharing.defaultSearchView = SearchQueryUtils.sortQuery(inSharing.defaultSearchView);
+    if (!inSharing.searchQuery) {
+      throw new Error('Sharing search query is required');
     }
-    if(inSharing.defaultDirectoryView){
-      sharing.defaultDirectoryView = inSharing.defaultDirectoryView;
+    SearchQueryUtils.validateSearchQuery(inSharing.searchQuery);
+    sharing.searchQuery = SearchQueryUtils.sortQuery(inSharing.searchQuery);
+    if (Object.prototype.hasOwnProperty.call(inSharing, 'defaultSearchView')) {
+      if (inSharing.defaultSearchView) {
+        SearchQueryUtils.validateSearchQuery(inSharing.defaultSearchView);
+        sharing.defaultSearchView = SearchQueryUtils.sortQuery(inSharing.defaultSearchView);
+        sharing.defaultDirectoryView = null;
+      } else {
+        sharing.defaultSearchView = null;
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(inSharing, 'defaultDirectoryView')) {
+      sharing.defaultDirectoryView = inSharing.defaultDirectoryView || null;
+      if (sharing.defaultDirectoryView) {
+        sharing.defaultSearchView = null;
+      }
     }
     sharing.expires = inSharing.expires;
 
-    return connection.getRepository(SharingEntity).save(sharing);
+    return repository.save(sharing);
   }
 }

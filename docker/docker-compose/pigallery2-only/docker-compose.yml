@@ -1,8 +1,7 @@
-version: '3.9'
 services:
   pigallery2:
-    image: bpatrik/pigallery2:latest
-    container_name: pigallery2
+    image: railline/pigallery2plus:latest
+    container_name: pigallery2plus
     deploy:
       resources:
         limits:
