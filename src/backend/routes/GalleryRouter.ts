@@ -505,6 +505,7 @@ export class GalleryRouter {
       GalleryMWs.parseSearchQuery,
       GalleryMWs.getRandomImage,
       GalleryMWs.loadFile,
+      GalleryMWs.loadRandomImagePreview,
       ServerTimingMWs.addServerTiming,
       RenderingMWs.renderFile
     );
@@ -519,6 +520,7 @@ export class GalleryRouter {
       VersionMWs.injectGalleryVersion,
       GalleryMWs.getRandomImage,
       GalleryMWs.loadFile,
+      GalleryMWs.loadRandomImagePreview,
       ServerTimingMWs.addServerTiming,
       RenderingMWs.renderFile
     );

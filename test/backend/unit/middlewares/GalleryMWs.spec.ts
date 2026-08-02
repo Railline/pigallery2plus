@@ -11,6 +11,8 @@ import {ObjectManagers} from '../../../../src/backend/model/ObjectManagers';
 import {QueryParams} from '../../../../src/common/QueryParams';
 import {SearchQueryTypes} from '../../../../src/common/entities/SearchQueryDTO';
 import {ErrorCodes, ErrorDTO} from '../../../../src/common/entities/Error';
+import {PhotoProcessing} from '../../../../src/backend/model/fileaccess/fileprocessing/PhotoProcessing';
+import {ThumbnailSourceType} from '../../../../src/backend/model/fileaccess/PhotoWorker';
 
 declare const before: any;
 declare const describe: any;
@@ -120,6 +122,169 @@ describe('GalleryMWs', () => {
   });
 
   describe('public random sharing links', () => {
+    it('should generate a bounded 1080p-class preview and disable response caching', async () => {
+      const originalGenerateThumbnail = PhotoProcessing.generateThumbnail;
+      const originalFindExistingThumbnail = PhotoProcessing.findExistingThumbnail;
+      const originalThumbnailSizes = Config.Media.Photo.thumbnailSizes.slice();
+      let generated: {path: string; size: number; type: ThumbnailSourceType; square: boolean};
+      const headers = new Map<string, string>();
+
+      try {
+        Config.Media.Photo.thumbnailSizes = [320, 1080, 2048];
+        PhotoProcessing.findExistingThumbnail = async () => null;
+        PhotoProcessing.generateThumbnail = async (mediaPath, size, type, makeSquare) => {
+          generated = {path: mediaPath, size, type, square: makeSquare};
+          return '/tmp/cached-preview.webp';
+        };
+        const req: any = {resultPipe: '/media/original.jpg', query: {}};
+        const res: any = {setHeader: (name: string, value: string) => headers.set(name, value)};
+        let nextCalls = 0;
+
+        await GalleryMWs.loadRandomImagePreview(req, res, () => nextCalls++);
+
+        expect(generated).to.deep.equal({
+          path: '/media/original.jpg',
+          size: 1080,
+          type: ThumbnailSourceType.Photo,
+          square: false,
+        });
+        expect(req.resultPipe).to.equal('/tmp/cached-preview.webp');
+        expect(headers.get('Cache-Control')).to.equal('no-store');
+        expect(nextCalls).to.equal(1);
+      } finally {
+        PhotoProcessing.generateThumbnail = originalGenerateThumbnail;
+        PhotoProcessing.findExistingThumbnail = originalFindExistingThumbnail;
+        Config.Media.Photo.thumbnailSizes = originalThumbnailSizes;
+      }
+    });
+
+    it('should prefer the largest preview that is already cached', async () => {
+      const originalGenerateThumbnail = PhotoProcessing.generateThumbnail;
+      const originalFindExistingThumbnail = PhotoProcessing.findExistingThumbnail;
+      const originalThumbnailSizes = Config.Media.Photo.thumbnailSizes.slice();
+      let generationCalls = 0;
+
+      try {
+        Config.Media.Photo.thumbnailSizes = [320, 1080, 2048];
+        PhotoProcessing.findExistingThumbnail = async (_mediaPath, sizes) => {
+          expect(sizes).to.deep.equal([320, 1080, 2048]);
+          return '/tmp/existing-2048-preview.webp';
+        };
+        PhotoProcessing.generateThumbnail = async () => {
+          generationCalls++;
+          return '/tmp/generated-preview.webp';
+        };
+        const req: any = {resultPipe: '/media/original.jpg', query: {}};
+        const res: any = {setHeader: (): void => undefined};
+
+        await GalleryMWs.loadRandomImagePreview(req, res, () => undefined);
+
+        expect(generationCalls).to.equal(0);
+        expect(req.resultPipe).to.equal('/tmp/existing-2048-preview.webp');
+      } finally {
+        PhotoProcessing.generateThumbnail = originalGenerateThumbnail;
+        PhotoProcessing.findExistingThumbnail = originalFindExistingThumbnail;
+        Config.Media.Photo.thumbnailSizes = originalThumbnailSizes;
+      }
+    });
+
+    it('should select the nearest allowed random preview size', async () => {
+      const originalGenerateThumbnail = PhotoProcessing.generateThumbnail;
+      const originalFindExistingThumbnail = PhotoProcessing.findExistingThumbnail;
+      const originalThumbnailSizes = Config.Media.Photo.thumbnailSizes.slice();
+      let selectedSize: number;
+
+      try {
+        Config.Media.Photo.thumbnailSizes = [320, 1080, 2048];
+        PhotoProcessing.findExistingThumbnail = async () => null;
+        PhotoProcessing.generateThumbnail = async (_mediaPath, size) => {
+          selectedSize = size;
+          return '/tmp/cached-preview.webp';
+        };
+        const req: any = {resultPipe: '/media/original.jpg', query: {size: '1000'}};
+        const res: any = {setHeader: (): void => undefined};
+
+        await GalleryMWs.loadRandomImagePreview(req, res, () => undefined);
+
+        expect(selectedSize).to.equal(1080);
+      } finally {
+        PhotoProcessing.generateThumbnail = originalGenerateThumbnail;
+        PhotoProcessing.findExistingThumbnail = originalFindExistingThumbnail;
+        Config.Media.Photo.thumbnailSizes = originalThumbnailSizes;
+      }
+    });
+
+    it('should preserve the source file when the original size is requested', async () => {
+      const originalGenerateThumbnail = PhotoProcessing.generateThumbnail;
+      const headers = new Map<string, string>();
+      let generationCalls = 0;
+
+      try {
+        PhotoProcessing.generateThumbnail = async () => {
+          generationCalls++;
+          return '/tmp/cached-preview.webp';
+        };
+        const req: any = {resultPipe: '/media/original.jpg', query: {size: 'original'}};
+        const res: any = {setHeader: (name: string, value: string) => headers.set(name, value)};
+
+        await GalleryMWs.loadRandomImagePreview(req, res, () => undefined);
+
+        expect(generationCalls).to.equal(0);
+        expect(req.resultPipe).to.equal('/media/original.jpg');
+        expect(headers.get('Cache-Control')).to.equal('no-store');
+      } finally {
+        PhotoProcessing.generateThumbnail = originalGenerateThumbnail;
+      }
+    });
+
+    it('should coalesce concurrent random cache refills', async () => {
+      const managers = ObjectManagers.getInstance();
+      const originalSearchManager = managers.SearchManager;
+      const previousEnabled = Config.RandomPhoto.enabled;
+      const randomCache = (GalleryMWs as any).randomMediaPathCache as Map<string, unknown>;
+      let resolvePaths: (paths: string[]) => void;
+      const pendingPaths = new Promise<string[]>((resolve) => {
+        resolvePaths = resolve;
+      });
+      let calls = 0;
+
+      try {
+        Config.RandomPhoto.enabled = true;
+        randomCache.clear();
+        managers.SearchManager = {
+          getRandomMediaPaths: async () => {
+            calls++;
+            return pendingPaths;
+          },
+        } as any;
+        const makeRequest = (): any => ({
+          resultPipe: {type: SearchQueryTypes.keyword, value: 'x'},
+          params: {},
+          query: {},
+          session: {context: {user: {projectionKey: 'same-user'}}},
+        });
+        const first = makeRequest();
+        const second = makeRequest();
+
+        const firstCall = GalleryMWs.getRandomImage(first, {} as any, () => undefined);
+        const secondCall = GalleryMWs.getRandomImage(second, {} as any, () => undefined);
+        await Promise.resolve();
+        expect(calls).to.equal(1);
+
+        resolvePaths(['one.jpg', 'two.jpg']);
+        await Promise.all([firstCall, secondCall]);
+
+        expect(calls).to.equal(1);
+        expect(first.params.mediaPath).to.be.oneOf(['one.jpg', 'two.jpg']);
+        expect(second.params.mediaPath).to.be.oneOf(['one.jpg', 'two.jpg']);
+        expect(first.params.mediaPath).to.not.equal(second.params.mediaPath);
+      } finally {
+        randomCache.clear();
+        managers.SearchManager = originalSearchManager;
+        Config.RandomPhoto.enabled = previousEnabled;
+      }
+    });
+
     it('should reject password-protected shares', async () => {
       const managers = ObjectManagers.getInstance();
       const originalSharingManager = managers.SharingManager;

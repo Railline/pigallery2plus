@@ -2124,6 +2124,36 @@ describe('SearchManager', (sqlHelper: DBTestHelper) => {
     }], 1, true))).to.deep.equalInAnyOrder([searchifyMedia(pFaceLess)]);
   });
 
+  it('should get bounded random photo paths without duplicates and wrap at the id boundary', async () => {
+    const sm = new SearchManager();
+    const random = Math.random;
+    const query = ({
+      value: 'star wars',
+      matchType: TextSearchQueryMatchTypes.exact_match,
+      type: SearchQueryTypes.keyword
+    } as TextSearch);
+
+    try {
+      // Start close to the highest id and force ascending traversal so the
+      // second bounded query has to wrap to the beginning of the id range.
+      Math.random = (): number => 0.999999;
+      const allPaths = await sm.getMediaPaths(DBTestHelper.defaultSession, query, true);
+      const paths = await sm.getRandomMediaPaths(DBTestHelper.defaultSession, query, 10, true);
+
+      expect(paths).to.have.length(allPaths.length);
+      expect(new Set(paths).size).to.equal(paths.length);
+      expect(paths).to.deep.equalInAnyOrder(allPaths);
+
+      const limited = await sm.getRandomMediaPaths(DBTestHelper.defaultSession, query, 2, true);
+      expect(limited).to.have.length(2);
+      expect(new Set(limited).size).to.equal(limited.length);
+      expect(limited.every(path => allPaths.includes(path))).to.be.true;
+      expect(await sm.getRandomMediaPaths(DBTestHelper.defaultSession, query, 0, true)).to.deep.equal([]);
+    } finally {
+      Math.random = random;
+    }
+  });
+
   it('prepareAndBuildWhereQuery should not fail on directory only', async () => {
     const sm = new SearchManager();
     const query = {

@@ -20,6 +20,8 @@ import {Logger} from '../Logger';
 import {UserRoles} from '../../common/entities/UserDTO';
 import {ContextUser, SessionContext} from '../model/SessionContext';
 import {SortingMethod} from '../../common/entities/SortingMethods';
+import {PhotoProcessing} from '../model/fileaccess/fileprocessing/PhotoProcessing';
+import {ThumbnailSourceType} from '../model/fileaccess/PhotoWorker';
 
 export class GalleryMWs {
   private static readonly MAX_SEARCH_PAGE_SIZE = 1000;
@@ -27,11 +29,13 @@ export class GalleryMWs {
   private static readonly RANDOM_CACHE_MAX = 64;
   private static readonly RANDOM_BATCH_SIZE = 15;
   private static readonly RANDOM_REFILL_THRESHOLD = 5;
+  private static readonly RANDOM_DEFAULT_PREVIEW_SIZE = 1080;
   private static readonly randomMediaPathCache = new Map<string, {
     paths: string[],
     expires: number,
     created: number,
     hits: number,
+    refill?: Promise<void>,
   }>();
 
   /**
@@ -559,24 +563,32 @@ export class GalleryMWs {
       }
 
       if (cache.paths.length <= GalleryMWs.RANDOM_REFILL_THRESHOLD) {
-        const sqlStarted = Date.now();
-        const paths = await ObjectManagers.getInstance().SearchManager.getRandomMediaPaths(
-          context,
-          query,
-          GalleryMWs.RANDOM_BATCH_SIZE,
-          true
-        );
-        GalleryMWs.shuffle(paths);
-        cache.paths = paths.slice(0, GalleryMWs.RANDOM_BATCH_SIZE);
-        cache.expires = Date.now() + GalleryMWs.RANDOM_CACHE_TTL;
-        Logger.info(
-          '[RandomPhoto]',
-          'cache refill',
-          'batch=' + paths.length,
-          'remaining=' + cache.paths.length,
-          'sqlMs=' + (Date.now() - sqlStarted),
-          'key=' + cacheKey.slice(0, 16)
-        );
+        const activeCache = cache;
+        if (!activeCache.refill) {
+          activeCache.refill = (async (): Promise<void> => {
+            const sqlStarted = Date.now();
+            const paths = await ObjectManagers.getInstance().SearchManager.getRandomMediaPaths(
+              context,
+              query,
+              GalleryMWs.RANDOM_BATCH_SIZE,
+              true
+            );
+            GalleryMWs.shuffle(paths);
+            activeCache.paths = paths.slice(0, GalleryMWs.RANDOM_BATCH_SIZE);
+            activeCache.expires = Date.now() + GalleryMWs.RANDOM_CACHE_TTL;
+            Logger.info(
+              '[RandomPhoto]',
+              'cache refill',
+              'batch=' + paths.length,
+              'remaining=' + activeCache.paths.length,
+              'sqlMs=' + (Date.now() - sqlStarted),
+              'key=' + cacheKey.slice(0, 16)
+            );
+          })().finally((): void => {
+            delete activeCache.refill;
+          });
+        }
+        await activeCache.refill;
       } else {
         Logger.info(
           '[RandomPhoto]',
@@ -608,6 +620,86 @@ export class GalleryMWs {
         )
       );
     }
+  }
+
+  /**
+   * Random links are commonly polled by wallpaper and dashboard clients. Serve
+   * a cached preview instead of repeatedly streaming a potentially large source
+   * file from the media storage. The original remains available explicitly via
+   * `?size=original`.
+   */
+  public static async loadRandomImagePreview(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    if (!req.resultPipe) {
+      return next();
+    }
+
+    // A random URL is expected to return a different image on every request.
+    // RenderingMWs preserves this header instead of applying its immutable
+    // one-year file cache policy.
+    res.setHeader('Cache-Control', 'no-store');
+
+    const rawSize = req.query['size'];
+    const requestedSize = Array.isArray(rawSize) ? rawSize[0] : rawSize;
+    if (
+      typeof requestedSize === 'string' &&
+      requestedSize.trim().toLowerCase() === 'original'
+    ) {
+      return next();
+    }
+
+    const sizes = Config.Media.Photo.thumbnailSizes
+      .filter((size): boolean => Number.isFinite(size) && size > 0)
+      .slice()
+      .sort((a, b): number => a - b);
+    if (sizes.length === 0) {
+      return next();
+    }
+
+    const parsedSize = typeof requestedSize === 'string'
+      ? Number(requestedSize)
+      : Number.NaN;
+    const hasExplicitPreviewSize = Number.isFinite(parsedSize) && parsedSize > 0;
+    const targetSize = hasExplicitPreviewSize
+      ? parsedSize
+      : GalleryMWs.RANDOM_DEFAULT_PREVIEW_SIZE;
+    const previewSize = sizes.reduce((closest, candidate): number =>
+      Math.abs(candidate - targetSize) < Math.abs(closest - targetSize)
+        ? candidate
+        : closest
+    );
+
+    const originalPath = req.resultPipe as string;
+    try {
+      if (!hasExplicitPreviewSize) {
+        const cachedPreview = await PhotoProcessing.findExistingThumbnail(
+          originalPath,
+          sizes
+        );
+        if (cachedPreview) {
+          req.resultPipe = cachedPreview;
+          return next();
+        }
+      }
+      req.resultPipe = await PhotoProcessing.generateThumbnail(
+        originalPath,
+        previewSize,
+        ThumbnailSourceType.Photo,
+        false
+      );
+    } catch (error) {
+      // A random image should remain available if preview generation fails.
+      req.resultPipe = originalPath;
+      Logger.warn(
+        '[RandomPhoto]',
+        'Preview generation failed, serving the original: ' +
+        (error instanceof Error ? error.message : String(error))
+      );
+    }
+    return next();
   }
 
   public static async getMediaEntry(

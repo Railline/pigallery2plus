@@ -111,6 +111,7 @@ Reads Adobe's XMP Face region metadata and shows face bounding boxes over images
 
 ### Random Link
 Create a link that serves a random photo from your gallery, useful for 3rd party applications like wallpaper changers.
+By default, the endpoint reuses the largest WebP preview already in the thumbnail cache. If none exists, it generates the configured size closest to 1080p, avoiding repeated full-resolution transfers from slower media storage. Add `?size=2048` to select the closest configured preview size explicitly, or `?size=original` when the source file is required. Random responses use `Cache-Control: no-store`, so clients receive a new selection instead of retaining the previous image.
 ![Random Link](assets/random_link.png)
 
 ### Rich Settings

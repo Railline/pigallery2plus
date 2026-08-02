@@ -12,6 +12,26 @@ import {PersonEntry} from '../../database/enitites/person/PersonEntry';
 import {SVGIconConfig} from '../../../../common/config/public/ClientConfig';
 import {Logger} from '../../../Logger';
 
+const DEFAULT_THUMBNAIL_CONCURRENCY = 4;
+
+export const calculateThumbnailConcurrency = (
+  parallelism: number,
+  configuredLimit: number
+): number => {
+  const normalizedParallelism = Number.isFinite(parallelism)
+    ? Math.max(1, Math.floor(parallelism))
+    : 1;
+  const availableWorkers = Math.max(1, normalizedParallelism - 1);
+  const normalizedLimit = Number.isFinite(configuredLimit)
+    ? Math.floor(configuredLimit)
+    : 0;
+
+  if (normalizedLimit > 0) {
+    return Math.max(1, Math.min(availableWorkers, normalizedLimit));
+  }
+  return Math.min(availableWorkers, DEFAULT_THUMBNAIL_CONCURRENCY);
+};
+
 export class PhotoProcessing {
   private static initDone = false;
   private static taskQue: ITaskExecuter<MediaRendererInput | SvgRendererInput, void> = null;
@@ -30,14 +50,18 @@ export class PhotoProcessing {
       return;
     }
 
-    Config.Media.Photo.concurrentThumbnailGenerations = Math.max(
-      1,
-      os.cpus().length - 1
+    const availableParallelism = typeof os.availableParallelism === 'function'
+      ? os.availableParallelism()
+      : os.cpus().length;
+    Config.Media.Photo.concurrentThumbnailGenerations = calculateThumbnailConcurrency(
+      availableParallelism,
+      Config.Media.Photo.concurrentThumbnailGenerationsLimit
     );
-
-    if (Config.Media.Photo.concurrentThumbnailGenerationsLimit > 0) {
-      Config.Media.Photo.concurrentThumbnailGenerations = Math.min(Config.Media.Photo.concurrentThumbnailGenerations, Config.Media.Photo.concurrentThumbnailGenerationsLimit);
-    }
+    Logger.info(
+      '[PhotoProcessing]',
+      `Thumbnail concurrency: ${Config.Media.Photo.concurrentThumbnailGenerations} ` +
+      `(available parallelism: ${availableParallelism})`
+    );
 
     this.taskQue = new TaskExecuter(
       Config.Media.Photo.concurrentThumbnailGenerations,
@@ -532,6 +556,31 @@ export class PhotoProcessing {
         PhotoProcessing.thumbnailGenerationInFlight.delete(outPath);
       }
     }
+  }
+
+  /**
+   * Returns the largest readable cached thumbnail without touching the source
+   * media. This is useful for latency-sensitive endpoints backed by remote or
+   * sleeping storage.
+   */
+  public static async findExistingThumbnail(
+    mediaPath: string,
+    sizes: number[]
+  ): Promise<string | null> {
+    const candidates = Array.from(new Set(
+      sizes.filter((size): boolean => Number.isFinite(size) && size > 0)
+    )).sort((a, b): number => b - a);
+
+    for (const size of candidates) {
+      try {
+        const thumbnailPath = PhotoProcessing.generateConvertedPath(mediaPath, size);
+        await fsp.access(thumbnailPath, fsConstants.R_OK);
+        return thumbnailPath;
+      } catch (error) {
+        // Try the next configured size. Missing previews are expected here.
+      }
+    }
+    return null;
   }
 
   public static isPhoto(fullPath: string): boolean {

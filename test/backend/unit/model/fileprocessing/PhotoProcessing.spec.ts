@@ -2,10 +2,23 @@ import {expect} from 'chai';
 import {Config} from '../../../../../src/common/config/private/Config';
 import {ProjectPath} from '../../../../../src/backend/ProjectPath';
 import * as path from 'path';
-import {PhotoProcessing} from '../../../../../src/backend/model/fileaccess/fileprocessing/PhotoProcessing';
+import {
+  calculateThumbnailConcurrency,
+  PhotoProcessing,
+} from '../../../../../src/backend/model/fileaccess/fileprocessing/PhotoProcessing';
 
 
 describe('PhotoProcessing', () => {
+
+  it('should bound automatic thumbnail concurrency while honoring an explicit limit', () => {
+    expect(calculateThumbnailConcurrency(1, 0)).to.equal(1);
+    expect(calculateThumbnailConcurrency(4, 0)).to.equal(3);
+    expect(calculateThumbnailConcurrency(32, 0)).to.equal(4);
+    expect(calculateThumbnailConcurrency(32, 2)).to.equal(2);
+    expect(calculateThumbnailConcurrency(32, 16)).to.equal(16);
+    expect(calculateThumbnailConcurrency(32, 100)).to.equal(31);
+    expect(calculateThumbnailConcurrency(Number.NaN, Number.NaN)).to.equal(1);
+  });
 
   it('should generate converted gif file path', async () => {
 
