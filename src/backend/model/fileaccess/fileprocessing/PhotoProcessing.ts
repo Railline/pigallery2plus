@@ -192,7 +192,27 @@ export class PhotoProcessing {
       return false;
     }
 
-    const metadata = await ImageRendererFactory.metadata(input.mediaPath, true, input.sharpOptions);
+    let metadata: Awaited<ReturnType<typeof ImageRendererFactory.metadata>>;
+    try {
+      metadata = await ImageRendererFactory.metadata(
+        input.mediaPath,
+        true,
+        input.sharpOptions
+      );
+    } catch (error) {
+      // Sharp applies its input-pixel limit to the sum of every GIF frame.
+      // Reaching that limit is exactly the case where the streaming ffmpeg
+      // renderer is safer; do not let metadata probing turn it into an HTTP 500.
+      if (!PhotoProcessing.isPixelLimitError(error)) {
+        throw error;
+      }
+      Logger.warn(
+        '[PhotoProcessing]',
+        'Animated GIF exceeds Sharp input pixel limit, using ffmpeg conversion: ' +
+        input.mediaPath
+      );
+      return true;
+    }
     const pages = metadata.pages || 1;
     const pageHeight = metadata.pageHeight || Math.max(1, Math.floor((metadata.height || 0) / pages));
     const width = metadata.width || 0;

@@ -6,6 +6,11 @@ import {
   calculateThumbnailConcurrency,
   PhotoProcessing,
 } from '../../../../../src/backend/model/fileaccess/fileprocessing/PhotoProcessing';
+import {
+  ImageRendererFactory,
+  MediaRendererInput,
+  ThumbnailSourceType,
+} from '../../../../../src/backend/model/fileaccess/PhotoWorker';
 
 
 describe('PhotoProcessing', () => {
@@ -18,6 +23,35 @@ describe('PhotoProcessing', () => {
     expect(calculateThumbnailConcurrency(32, 16)).to.equal(16);
     expect(calculateThumbnailConcurrency(32, 100)).to.equal(31);
     expect(calculateThumbnailConcurrency(Number.NaN, Number.NaN)).to.equal(1);
+  });
+
+  it('should use ffmpeg when animated GIF metadata exceeds the Sharp pixel limit', async () => {
+    const originalMetadata = ImageRendererFactory.metadata;
+    ImageRendererFactory.metadata = async () => {
+      throw new Error('Input image exceeds pixel limit');
+    };
+
+    const processing = PhotoProcessing as unknown as {
+      shouldUseFfmpegAnimatedThumbnail(input: MediaRendererInput): Promise<boolean>;
+    };
+    const input: MediaRendererInput = {
+      type: ThumbnailSourceType.Photo,
+      mediaPath: '/media/large-animation.gif',
+      outPath: '/tmp/large-animation.webp',
+      size: 320,
+      makeSquare: false,
+      quality: 85,
+      useLanczos3: true,
+      smartSubsample: true,
+      sharpOptions: {},
+      animate: true,
+    };
+
+    try {
+      expect(await processing.shouldUseFfmpegAnimatedThumbnail(input)).to.equal(true);
+    } finally {
+      ImageRendererFactory.metadata = originalMetadata;
+    }
   });
 
   it('should generate converted gif file path', async () => {
