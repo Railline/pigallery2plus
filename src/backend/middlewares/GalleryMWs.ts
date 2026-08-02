@@ -370,21 +370,8 @@ export class GalleryMWs {
       );
     }
 
-    // check if file exist
-    try {
-      if ((await fsp.stat(fullMediaPath)).isDirectory()) {
-        return next();
-      }
-    } catch (e) {
-      return next(
-        new ErrorDTO(
-          ErrorCodes.PATH_ERROR,
-          'no such file:' + req.params['mediaPath'],
-          'can\'t find file: ' + fullMediaPath
-        )
-      );
-    }
-
+    // Existence is checked by the final renderer for original media. Thumbnail
+    // requests can now use a cached local conversion without touching the NAS.
     req.resultPipe = fullMediaPath;
     return next();
   }

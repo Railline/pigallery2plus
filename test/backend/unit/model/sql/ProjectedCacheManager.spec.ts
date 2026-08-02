@@ -197,6 +197,33 @@ describe('ProjectedCacheManager', (sqlHelper: DBTestHelper) => {
       return m;
     };
 
+    it('coalesces concurrent writes for the same directory projection', async () => {
+      const original = pcm.getCacheForDirectory.bind(pcm);
+      let computations = 0;
+      pcm.getCacheForDirectory = async (...args): Promise<ProjectedDirectoryCacheEntity> => {
+        computations++;
+        await new Promise(setImmediate);
+        return original(...args);
+      };
+
+      const target = {
+        id: subDir.id,
+        name: subDir.name,
+        path: subDir.path
+      };
+      const results = await Promise.all([
+        pcm.setAndGetCacheForDirectory(connection, DBTestHelper.defaultSession as any, target),
+        pcm.setAndGetCacheForDirectory(connection, DBTestHelper.defaultSession as any, target),
+        pcm.setAndGetCacheForDirectory(connection, DBTestHelper.defaultSession as any, target),
+      ]);
+
+      expect(computations).to.equal(1);
+      expect(results).to.have.length(3);
+      expect(await connection.getRepository(ProjectedDirectoryCacheEntity).count({
+        where: {directory: {id: subDir.id} as any, projectionKey: SessionManager.NO_PROJECTION_KEY}
+      })).to.equal(1);
+    });
+
     it('should sort directory cover', async () => {
       // Rating desc, then Date desc -> expect p2 for subDir
       let saved = await pcm.setAndGetCacheForDirectory(connection, DBTestHelper.defaultSession as any, {

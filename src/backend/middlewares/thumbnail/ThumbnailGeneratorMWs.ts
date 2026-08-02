@@ -169,6 +169,13 @@ export class ThumbnailGeneratorMWs {
         );
         return next();
       } catch (error) {
+        if (ThumbnailGeneratorMWs.isMissingMediaError(error)) {
+          return next(new ErrorDTO(
+            ErrorCodes.PATH_ERROR,
+            'no such file:' + req.params['mediaPath'],
+            'can\'t find file: ' + mediaPath
+          ));
+        }
         return next(
           new ErrorDTO(
             ErrorCodes.THUMBNAIL_GENERATION_ERROR,
@@ -205,6 +212,13 @@ export class ThumbnailGeneratorMWs {
         );
         return next();
       } catch (error) {
+        if (ThumbnailGeneratorMWs.isMissingMediaError(error)) {
+          return next(new ErrorDTO(
+            ErrorCodes.PATH_ERROR,
+            'no such file:' + req.params['mediaPath'],
+            'can\'t find file: ' + mediaPath
+          ));
+        }
         return next(
           new ErrorDTO(
             ErrorCodes.THUMBNAIL_GENERATION_ERROR,
@@ -284,5 +298,12 @@ export class ThumbnailGeneratorMWs {
     }
 
     return exists;
+  }
+
+  private static isMissingMediaError(error: unknown): boolean {
+    const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+    return message.includes('enoent') ||
+      message.includes('no such file or directory') ||
+      message.includes('input file is missing');
   }
 }
