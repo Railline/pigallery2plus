@@ -336,10 +336,11 @@ export class GalleryGridComponent
     if (photoRowBuilder.getPhotoRow().length > 1) {
       maxRowHeight *= 1.2;
     }
-    const noFullRow = photoRowBuilder.calcRowHeight() > maxRowHeight;
+    const calculatedRowHeight = photoRowBuilder.calcRowHeight();
+    const noFullRow = calculatedRowHeight > maxRowHeight;
     // if the row is not full, make it average sized
     const rowHeight = noFullRow ? (minRowHeight + maxRowHeight) / 2 :
-      Math.min(photoRowBuilder.calcRowHeight(), maxRowHeight);
+      Math.min(calculatedRowHeight, maxRowHeight);
     const imageHeight = rowHeight - this.IMAGE_MARGIN * 2;
 
     const rowId = this.mediaToRender[this.mediaToRender.length - 1].media.length;

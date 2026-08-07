@@ -509,25 +509,25 @@ export class PhotoProcessing {
       animate: Config.Media.Photo.animateGif
     } as MediaRendererInput;
 
-    await PhotoProcessing.removeFailedThumbnailIfSourceIsReadable(input, outPath);
-
-    // check if file already exist
-    try {
-      await fsp.access(outPath, fsConstants.R_OK);
-      return outPath;
-    } catch (e) {
-      // ignoring errors
-    }
-
-    const outDir = ProjectPath.resolveInside(
-      ProjectPath.TranscodedFolder,
-      path.relative(ProjectPath.TranscodedFolder, path.dirname(input.outPath))
-    );
-    if (!outDir) {
-      throw new Error('Thumbnail output path is outside transcoded folder: ' + input.outPath);
-    }
-
     const generation = (async (): Promise<string> => {
+      await PhotoProcessing.removeFailedThumbnailIfSourceIsReadable(input, outPath);
+
+      // check if file already exists
+      try {
+        await fsp.access(outPath, fsConstants.R_OK);
+        return outPath;
+      } catch (e) {
+        // ignoring errors
+      }
+
+      const outDir = ProjectPath.resolveInside(
+        ProjectPath.TranscodedFolder,
+        path.relative(ProjectPath.TranscodedFolder, path.dirname(input.outPath))
+      );
+      if (!outDir) {
+        throw new Error('Thumbnail output path is outside transcoded folder: ' + input.outPath);
+      }
+
       await fsp.mkdir(outDir, {recursive: true});
       if (sourceType === ThumbnailSourceType.Photo && input.animate) {
         if (await PhotoProcessing.shouldUseFfmpegAnimatedThumbnail(input)) {

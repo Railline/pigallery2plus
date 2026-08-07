@@ -6,7 +6,7 @@ import {DirectoryBaseDTO, ParentDirectoryDTO, SubDirectoryDTO} from '../../../..
 import {TestHelper} from '../../../../TestHelper';
 import {ObjectManagers} from '../../../../../src/backend/model/ObjectManagers';
 import {GalleryManager} from '../../../../../src/backend/model/database/GalleryManager';
-import {Connection} from 'typeorm';
+import {Brackets,Connection} from 'typeorm';
 import {PhotoDTO} from '../../../../../src/common/entities/PhotoDTO';
 import {VideoDTO} from '../../../../../src/common/entities/VideoDTO';
 import {FileDTO} from '../../../../../src/common/entities/FileDTO';
@@ -65,6 +65,7 @@ describe('CoverManager', (sqlHelper: DBTestHelper) => {
   describe = tmpDescribe;
   /**
    * dir
+   * |- pRoot
    * |-> subDir
    *     |- pFaceLess
    *     |- v
@@ -82,10 +83,17 @@ describe('CoverManager', (sqlHelper: DBTestHelper) => {
   let p2: PhotoDTO;
   let pFaceLess: PhotoDTO;
   let p4: PhotoDTO;
+  let pRoot: PhotoDTO;
 
 
   const setUpTestGallery = async (): Promise<void> => {
     const directory: ParentDirectoryDTO = TestHelper.getDirectoryEntry(null, 'éűáúőóüöÉŰÚŐÓÜÖ[]^[[]]][asd]');
+    pRoot = TestHelper.getPhotoEntry(directory);
+    pRoot.name = 'root-only.jpg';
+    pRoot.metadata.keywords = ['root-only'];
+    pRoot.metadata.caption = 'root-only';
+    pRoot.metadata.rating = 1;
+    pRoot.metadata.creationDate = 1;
     subDir = TestHelper.getDirectoryEntry(directory, 'The Phantom Menace');
     subDir2 = TestHelper.getDirectoryEntry(directory, 'Return of the Jedi');
     p = TestHelper.getPhotoEntry1(subDir);
@@ -108,6 +116,8 @@ describe('CoverManager', (sqlHelper: DBTestHelper) => {
 
     subDir = dir.directories[0];
     subDir2 = dir.directories[1];
+    pRoot = dir.media.find((media) => media.name === pRoot.name) as PhotoDTO;
+    pRoot.directory = dir;
     p = (subDir.media.filter(m => m.name === p.name)[0] as any);
     p.directory = subDir;
     p2 = (subDir.media.filter(m => m.name === p2.name)[0] as any);
@@ -179,6 +189,52 @@ describe('CoverManager', (sqlHelper: DBTestHelper) => {
       .update(ProjectedDirectoryCacheEntity).set({valid: false}).execute();
 
     expect(await pm.getPartialDirsWithoutCovers()).to.deep.equalInAnyOrder([dir, subDir, subDir2].map(d => partialDir(d)));
+  });
+
+  it('should prioritize direct media over a better-ranked descendant', async () => {
+    const pm = new CoverManager();
+    Config.AlbumCover.SearchQuery = null;
+    Config.AlbumCover.Sorting = [new ClientSortingConfig(SortByTypes.Rating, false)];
+
+    const cover = await pm.getCoverForDirectory(DBTestHelper.defaultSession, dir);
+
+    expect(cover.name).to.equal(pRoot.name);
+  });
+
+  it('should use a matching descendant when the cover filter excludes direct media', async () => {
+    const pm = new CoverManager();
+    Config.AlbumCover.SearchQuery = {
+      type: SearchQueryTypes.any_text,
+      value: 'Boba',
+    } as TextSearch;
+
+    const cover = await pm.getCoverForDirectory(DBTestHelper.defaultSession, dir);
+
+    expect(cover.name).to.equal(p.name);
+  });
+
+  it('should fall back to direct media when the cover filter matches nothing', async () => {
+    const pm = new CoverManager();
+    Config.AlbumCover.SearchQuery = {
+      type: SearchQueryTypes.any_text,
+      value: 'does-not-exist',
+    } as TextSearch;
+
+    const cover = await pm.getCoverForDirectory(DBTestHelper.defaultSession, dir);
+
+    expect(cover.name).to.equal(pRoot.name);
+  });
+
+  it('should use an allowed descendant when projection blocks direct media', async () => {
+    const pm = new CoverManager();
+    const session = new SessionContext();
+    session.projectionQuery = new Brackets((query) => {
+      query.where('media.name = :projectedName', {projectedName: p4.name});
+    });
+
+    const cover = await pm.getCoverForDirectory(session, dir);
+
+    expect(cover.name).to.equal(p4.name);
   });
 
 

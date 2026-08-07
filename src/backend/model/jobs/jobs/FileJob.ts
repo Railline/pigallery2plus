@@ -23,6 +23,8 @@ export abstract class FileJob<S extends { indexedOnly?: boolean } = { indexedOnl
   public readonly ConfigTemplate: DynamicConfig[] = [];
   directoryQueue: string[] = [];
   fileQueue: string[] = [];
+  private directoryQueueHead = 0;
+  private fileQueueHead = 0;
   DBProcessing = {
     mediaLoaded: 0,
     hasMoreMedia: true,
@@ -51,6 +53,8 @@ export abstract class FileJob<S extends { indexedOnly?: boolean } = { indexedOnl
   protected async init(): Promise<void> {
     this.directoryQueue = [];
     this.fileQueue = [];
+    this.directoryQueueHead = 0;
+    this.fileQueueHead = 0;
     this.DBProcessing = {
       mediaLoaded: 0,
       hasMoreMedia: true,
@@ -73,8 +77,8 @@ export abstract class FileJob<S extends { indexedOnly?: boolean } = { indexedOnl
 
   protected async step(): Promise<boolean> {
     if (
-      this.fileQueue.length === 0 &&
-      ((this.directoryQueue.length === 0 && !this.config.indexedOnly) ||
+      this.getFilesLeft() === 0 &&
+      ((this.getDirectoriesLeft() === 0 && !this.config.indexedOnly) ||
         (this.config.indexedOnly &&
           this.DBProcessing.hasMoreMedia === false))) {
       return false;
@@ -82,11 +86,11 @@ export abstract class FileJob<S extends { indexedOnly?: boolean } = { indexedOnl
 
 
     if (!this.config.indexedOnly) {
-      if (this.directoryQueue.length > 0) {
+      if (this.getDirectoriesLeft() > 0) {
         await this.loadADirectoryFromDisk();
         return true;
-      } else if (this.fileQueue.length > 0) {
-        this.Progress.Left = this.fileQueue.length;
+      } else if (this.getFilesLeft() > 0) {
+        this.Progress.Left = this.getFilesLeft();
       }
     } else {
       if (!this.DBProcessing.initiated) {
@@ -99,13 +103,13 @@ export abstract class FileJob<S extends { indexedOnly?: boolean } = { indexedOnl
         this.DBProcessing.initiated = true;
         return true;
       }
-      if (this.fileQueue.length === 0) {
+      if (this.getFilesLeft() === 0) {
         await this.loadMediaFilesFromDB();
         return true;
       }
     }
 
-    const filePath = this.fileQueue.shift();
+    const filePath = this.takeNextFile();
     try {
       if ((await this.shouldProcess(filePath)) === true) {
         this.Progress.Processed++;
@@ -132,7 +136,7 @@ export abstract class FileJob<S extends { indexedOnly?: boolean } = { indexedOnl
   }
 
   private async loadADirectoryFromDisk(): Promise<void> {
-    const directory = this.directoryQueue.shift();
+    const directory = this.takeNextDirectory();
     this.Progress.log('scanning directory: ' + directory);
     const scanned = await DiskManager.scanDirectoryNoMetadata(
       directory,
@@ -271,6 +275,44 @@ export abstract class FileJob<S extends { indexedOnly?: boolean } = { indexedOnl
       }
     }
     this.DBProcessing.hasMoreMedia = hasMoreFile.media || hasMoreFile.metafile;
+  }
+
+  private getDirectoriesLeft(): number {
+    return this.directoryQueue.length - this.directoryQueueHead;
+  }
+
+  private getFilesLeft(): number {
+    return this.fileQueue.length - this.fileQueueHead;
+  }
+
+  private takeNextDirectory(): string {
+    const directory = this.directoryQueue[this.directoryQueueHead++];
+    if (this.directoryQueueHead === this.directoryQueue.length) {
+      this.directoryQueue = [];
+      this.directoryQueueHead = 0;
+    } else if (
+      this.directoryQueueHead >= 4096 &&
+      this.directoryQueueHead * 2 >= this.directoryQueue.length
+    ) {
+      this.directoryQueue = this.directoryQueue.slice(this.directoryQueueHead);
+      this.directoryQueueHead = 0;
+    }
+    return directory;
+  }
+
+  private takeNextFile(): string {
+    const file = this.fileQueue[this.fileQueueHead++];
+    if (this.fileQueueHead === this.fileQueue.length) {
+      this.fileQueue = [];
+      this.fileQueueHead = 0;
+    } else if (
+      this.fileQueueHead >= 4096 &&
+      this.fileQueueHead * 2 >= this.fileQueue.length
+    ) {
+      this.fileQueue = this.fileQueue.slice(this.fileQueueHead);
+      this.fileQueueHead = 0;
+    }
+    return file;
   }
 
   private async countMediaFromDB(): Promise<number> {

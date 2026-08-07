@@ -19,6 +19,7 @@ export class IndexingJob<
 > extends Job<S> {
   public readonly Name = DefaultsJobs[DefaultsJobs.Indexing];
   directoriesToIndex: string[] = [];
+  private directoriesToIndexHead = 0;
   public readonly ConfigTemplate: DynamicConfig[] = [
     {
       id: 'indexChangesOnly',
@@ -39,6 +40,7 @@ export class IndexingJob<
 
   protected async init(): Promise<void> {
     this.directoriesToIndex = [];
+    this.directoriesToIndexHead = 0;
     this.directoriesToIndex.push('/');
     try {
       const connection = await SQLConnection.getConnection();
@@ -51,7 +53,7 @@ export class IndexingJob<
   }
 
   protected async step(): Promise<boolean> {
-    if (this.directoriesToIndex.length === 0) {
+    if (this.getDirectoriesLeft() === 0) {
       if (ObjectManagers.getInstance().IndexingManager.IsSavingInProgress) {
         this.Progress.log('Waiting for pending database saves to finish.');
         await ObjectManagers.getInstance().IndexingManager.SavingReady;
@@ -59,8 +61,8 @@ export class IndexingJob<
       this.Progress.Left = 0;
       return false;
     }
-    const directory = this.directoriesToIndex.shift();
-    this.Progress.Left = this.directoriesToIndex.length;
+    const directory = this.takeNextDirectory();
+    this.Progress.Left = this.getDirectoriesLeft();
 
     let scanned: ParentDirectoryDTO<FileDTO>;
     let dirChanged = true;
@@ -68,7 +70,13 @@ export class IndexingJob<
     try {
 
       const absDirPath = path.join(ProjectPath.ImageFolder, directory);
-      if (!fs.existsSync(absDirPath)) {
+      let directoryExists = true;
+      try {
+        await fs.promises.access(absDirPath);
+      } catch (error) {
+        directoryExists = false;
+      }
+      if (!directoryExists) {
         this.Progress.log('Skipping. Directory does not exist: ' + directory);
         this.Progress.Skipped++;
       } else { // dir should exist now
@@ -76,7 +84,7 @@ export class IndexingJob<
         // check if the folder got modified if only changes need to be indexed
         if (this.config.indexChangesOnly) {
 
-          const stat = fs.statSync(absDirPath);
+          const stat = await fs.promises.stat(absDirPath);
           const lastModified = DiskManager.calcLastModified(stat);
           scanned = await ObjectManagers.getInstance().GalleryManager.selectDirStructure(directory);
           // If not modified and it was scanned before, dir is up-to-date
@@ -132,5 +140,24 @@ export class IndexingJob<
       }
     }
     return true;
+  }
+
+  private getDirectoriesLeft(): number {
+    return this.directoriesToIndex.length - this.directoriesToIndexHead;
+  }
+
+  private takeNextDirectory(): string {
+    const directory = this.directoriesToIndex[this.directoriesToIndexHead++];
+    if (this.directoriesToIndexHead === this.directoriesToIndex.length) {
+      this.directoriesToIndex = [];
+      this.directoriesToIndexHead = 0;
+    } else if (
+      this.directoriesToIndexHead >= 4096 &&
+      this.directoriesToIndexHead * 2 >= this.directoriesToIndex.length
+    ) {
+      this.directoriesToIndex = this.directoriesToIndex.slice(this.directoriesToIndexHead);
+      this.directoriesToIndexHead = 0;
+    }
+    return directory;
   }
 }

@@ -44,7 +44,7 @@ export class MetadataLoader {
     };
 
     try {
-      const stat = fs.statSync(fullPath);
+      const stat = await fs.promises.stat(fullPath);
       metadata.fileSize = stat.size;
       metadata.creationDate = stat.mtime.getTime(); //Default date is file system time of last modification
     } catch (err) {
@@ -156,12 +156,15 @@ export class MetadataLoader {
         ];
 
         for (const sidecarPath of sidecarPaths) {
-          if (fs.existsSync(sidecarPath)) {
-            const sidecarData: any = await exifr.sidecar(sidecarPath);
-            if (sidecarData !== undefined) {
-              // sidecar should not change the video dimension
-              MetadataLoader.mapMetadata(metadata, sidecarData, false);
-            }
+          try {
+            await fs.promises.access(sidecarPath);
+          } catch (error) {
+            continue;
+          }
+          const sidecarData: any = await exifr.sidecar(sidecarPath);
+          if (sidecarData !== undefined) {
+            // sidecar should not change the video dimension
+            MetadataLoader.mapMetadata(metadata, sidecarData, false);
           }
         }
       } catch (err) {
@@ -200,7 +203,7 @@ export class MetadataLoader {
     };
     try {
       try {
-        const stat = fs.statSync(fullPath);
+        const stat = await fs.promises.stat(fullPath);
         metadata.fileSize = stat.size;
         metadata.creationDate = stat.mtime.getTime();
       } catch (err) {
@@ -263,14 +266,17 @@ export class MetadataLoader {
           ];
 
           for (const sidecarPath of sidecarPaths) {
-            if (fs.existsSync(sidecarPath)) {
-              const sidecarData: any = await exifr.sidecar(sidecarPath, exifrOptions);
-              if (sidecarData !== undefined) {
-                //note that since side cars are loaded last, data loaded here overwrites embedded metadata (in Pigallery2, not in the actual files)
-                // sidecar should not change the image dimension
-                MetadataLoader.mapMetadata(metadata, sidecarData, false);
-                break;
-              }
+            try {
+              await fs.promises.access(sidecarPath);
+            } catch (error) {
+              continue;
+            }
+            const sidecarData: any = await exifr.sidecar(sidecarPath, exifrOptions);
+            if (sidecarData !== undefined) {
+              //note that since side cars are loaded last, data loaded here overwrites embedded metadata (in Pigallery2, not in the actual files)
+              // sidecar should not change the image dimension
+              MetadataLoader.mapMetadata(metadata, sidecarData, false);
+              break;
             }
           }
         } catch (err) {

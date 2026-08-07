@@ -160,14 +160,19 @@ export class FilterService {
       return [];
     }
     const ret: { date: Date, endDate: Date, dateStr: string, count: number, max: number }[] = [];
-    const minDate = prefiltered.media.reduce(
-      (p, curr) => Math.min(p, Utils.getTimeMS(curr.metadata.creationDate, curr.metadata.creationDateOffset, Config.Gallery.ignoreTimestampOffset)),
-      Number.MAX_VALUE - 1
-    );
-    const maxDate = prefiltered.media.reduce(
-      (p, curr) => Math.max(p, Utils.getTimeMS(curr.metadata.creationDate, curr.metadata.creationDateOffset, Config.Gallery.ignoreTimestampOffset)),
-      Number.MIN_VALUE + 1
-    );
+    let minDate = Number.MAX_VALUE - 1;
+    let maxDate = Number.MIN_VALUE + 1;
+    const mediaTimes = new Array<number>(prefiltered.media.length);
+    prefiltered.media.forEach((media, index) => {
+      const mediaTime = Utils.getTimeMS(
+        media.metadata.creationDate,
+        media.metadata.creationDateOffset,
+        Config.Gallery.ignoreTimestampOffset
+      );
+      mediaTimes[index] = mediaTime;
+      minDate = Math.min(minDate, mediaTime);
+      maxDate = Math.max(maxDate, mediaTime);
+    });
     const diff = (maxDate - minDate) / 1000;
     const H = 60 * 60;
     const D = H * 24;
@@ -205,37 +210,32 @@ export class FilterService {
     };
 
     const startMediaDate = new Date(floorDate(minDate));
+    const startMediaTime = startMediaDate.getTime();
+    const getDate = (index: number): Date => {
+      if (usedDiv >= Y) {
+        return new Date(startMediaDate.getFullYear() + (index * (usedDiv / Y)), 0, 1);
+      }
+      if (usedDiv === M) {
+        return new Date(startMediaDate.getFullYear(), startMediaDate.getMonth() + index, 1);
+      }
+      if (usedDiv === D) {
+        return new Date(startMediaDate.getFullYear(), startMediaDate.getMonth(), startMediaDate.getDate() + index, 1);
+      }
+      return new Date(startMediaTime + (index * usedDiv * 1000));
+    };
+    const dateFormat = usedDiv >= Y
+      ? 'y'
+      : usedDiv === M
+        ? 'y MMM'
+        : usedDiv === D
+          ? 'EEE'
+          : 'HH';
 
-    prefiltered.media.forEach(m => {
-      const key = Math.floor((floorDate(Utils.getTimeMS(m.metadata.creationDate, m.metadata.creationDateOffset, Config.Gallery.ignoreTimestampOffset)) - startMediaDate.getTime()) / 1000 / usedDiv);
-
-      const getDate = (index: number) => {
-        let d: Date;
-        if (usedDiv >= Y) {
-          d = new Date(startMediaDate.getFullYear() + (index * (usedDiv / Y)), 0, 1);
-        } else if (usedDiv === M) {
-          d = new Date(startMediaDate.getFullYear(), startMediaDate.getMonth() + index, 1);
-        } else if (usedDiv === D) {
-          d = new Date(startMediaDate.getFullYear(), startMediaDate.getMonth(), startMediaDate.getDate() + index, 1);
-        } else {
-          d = (new Date(startMediaDate.getTime() + (index * usedDiv * 1000)));
-        }
-        return d;
-      };
+    mediaTimes.forEach((mediaTime) => {
+      const key = Math.floor((floorDate(mediaTime) - startMediaTime) / 1000 / usedDiv);
       // extending the array
       while (ret.length <= key) {
-        let dStr: string;
-        // getting date range start for entry and also UI date pattern
-        if (usedDiv >= Y) {
-          dStr = 'y';
-        } else if (usedDiv === M) {
-          dStr = 'y MMM';
-        } else if (usedDiv === D) {
-          dStr = 'EEE';
-        } else {
-          dStr = 'HH';
-        }
-        ret.push({date: getDate(ret.length), endDate: getDate(ret.length + 1), dateStr: dStr, count: 0, max: 0});
+        ret.push({date: getDate(ret.length), endDate: getDate(ret.length + 1), dateStr: dateFormat, count: 0, max: 0});
       }
 
       ret[key].count++;
@@ -274,14 +274,19 @@ export class FilterService {
             /* Date Selector */
             if (c.media.length > 0) {
               // Update date filter range
-              afilters.dateFilter.minDate = c.media.reduce(
-                (p, curr) => Math.min(p, Utils.getTimeMS(curr.metadata.creationDate, curr.metadata.creationDateOffset, Config.Gallery.ignoreTimestampOffset)),
-                Number.MAX_VALUE - 1
-              );
-              afilters.dateFilter.maxDate = c.media.reduce(
-                (p, curr) => Math.max(p, Utils.getTimeMS(curr.metadata.creationDate, curr.metadata.creationDateOffset, Config.Gallery.ignoreTimestampOffset)),
-                Number.MIN_VALUE + 1
-              );
+              afilters.dateFilter.minDate = Number.MAX_VALUE - 1;
+              afilters.dateFilter.maxDate = Number.MIN_VALUE + 1;
+              const mediaTimes = new Array<number>(c.media.length);
+              c.media.forEach((media, index) => {
+                const mediaTime = Utils.getTimeMS(
+                  media.metadata.creationDate,
+                  media.metadata.creationDateOffset,
+                  Config.Gallery.ignoreTimestampOffset
+                );
+                mediaTimes[index] = mediaTime;
+                afilters.dateFilter.minDate = Math.min(afilters.dateFilter.minDate, mediaTime);
+                afilters.dateFilter.maxDate = Math.max(afilters.dateFilter.maxDate, mediaTime);
+              });
               // Add a few sec padding
               afilters.dateFilter.minDate -= ((afilters.dateFilter.minDate % 1000) + 1000);
               afilters.dateFilter.maxDate += ((1000 - (afilters.dateFilter.maxDate % 1000)) + 1000);
@@ -294,11 +299,11 @@ export class FilterService {
               }
 
               // Apply Date filter
-              c.media = c.media.filter(
-                (m) =>
-                  Utils.getTimeMS(m.metadata.creationDate, m.metadata.creationDateOffset, Config.Gallery.ignoreTimestampOffset) >= afilters.dateFilter.minFilter &&
-                  Utils.getTimeMS(m.metadata.creationDate, m.metadata.creationDateOffset, Config.Gallery.ignoreTimestampOffset) <= afilters.dateFilter.maxFilter
-              );
+              c.media = c.media.filter((_media, index) => {
+                const mediaTime = mediaTimes[index];
+                return mediaTime >= afilters.dateFilter.minFilter &&
+                  mediaTime <= afilters.dateFilter.maxFilter;
+              });
             } else {
               afilters.dateFilter.minDate = Number.MIN_VALUE;
               afilters.dateFilter.maxDate = Number.MAX_VALUE;
@@ -346,28 +351,34 @@ export class FilterService {
                     b.count - a.count);
 
               /* Apply filters */
-              f.options.forEach((opt) => {
-                if (opt.selected) {
-                  return;
-                }
+              const unselectedOptions = f.options.filter((option) => !option.selected);
+              if (unselectedOptions.length > 0) {
                 if (f.filter.isArrayValue) {
+                  const selectedOptions = new Set(
+                    f.options
+                      .filter((option) => option.selected && !Object.is(option.name, Number.NaN))
+                      .map((option) => option.name)
+                  );
                   c.media = c.media.filter((m) => {
                     const mapped = f.filter.mapFn(m as PhotoDTO) as string[];
                     if (!mapped) {
                       return true;
                     }
                     // Keep photos that have at least one of the selected values
-                    return mapped.some(value =>
-                      f.options.find(opt => opt.name === value && opt.selected)
-                    );
+                    return mapped.some((value) => !Object.is(value, Number.NaN) && selectedOptions.has(value));
                   });
                 } else {
-                  c.media = c.media.filter(
-                    (m) =>
-                      (f.filter.mapFn(m as PhotoDTO) as string) !== opt.name
+                  const unselectedNames = new Set(
+                    unselectedOptions
+                      .filter((option) => !Object.is(option.name, Number.NaN))
+                      .map((option) => option.name)
                   );
+                  c.media = c.media.filter((m) => {
+                    const mapped = f.filter.mapFn(m as PhotoDTO) as string;
+                    return Object.is(mapped, Number.NaN) || !unselectedNames.has(mapped);
+                  });
                 }
-              });
+              }
             }
             // If the number of photos did not change, the filters are not active
             afilters.areFiltersActive = c.media.length !== dirContent.media.length;

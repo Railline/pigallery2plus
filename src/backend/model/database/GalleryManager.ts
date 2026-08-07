@@ -110,7 +110,7 @@ export class GalleryManager {
       if (!absoluteDirectoryName) {
         return null;
       }
-      const stat = fs.statSync(absoluteDirectoryName);
+      const stat = await fs.promises.stat(absoluteDirectoryName);
       const lastModified = DiskManager.calcLastModified(stat);
 
       // If it seems that the content did not change, do not work on it
@@ -398,9 +398,7 @@ export class GalleryManager {
       .andWhere('directory.name = :dname AND directory.path = :dpath', {dname: directoryName, dpath: directoryParent})
       .andWhere(session.projectionQuery);
 
-    const count = await qb.getCount();
-
-    return count !== 0;
+    return await qb.getExists();
   }
 
   async authoriseMetaFile(session: SessionContext, p: string) {
@@ -425,9 +423,7 @@ export class GalleryManager {
       })
       .andWhere(session.projectionQuery);
 
-    const count = await qb.getCount();
-
-    return count !== 0;
+    return await qb.getExists();
   }
 
   protected async getDirIdAndTime(connection: Connection, name: string, path: string): Promise<{

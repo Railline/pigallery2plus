@@ -20,6 +20,7 @@ import {SortByTypes} from '../../../../../src/common/entities/SortingMethods';
 import {ClientSortingConfig} from '../../../../../src/common/config/public/ClientConfig';
 import {DiskManager} from '../../../../../src/backend/model/fileaccess/DiskManager';
 import {SessionContext} from '../../../../../src/backend/model/SessionContext';
+import {PersonJunctionTable} from '../../../../../src/backend/model/database/enitites/person/PersonJunctionTable';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const deepEqualInAnyOrder = require('deep-equal-in-any-order');
@@ -651,7 +652,24 @@ describe('IndexingManager', (sqlHelper: DBTestHelper) => {
     const selected = await gm.getParentDirFromId(conn, session,
       (await gm.getDirIdAndTime(conn, subDir.name, subDir.path)).id);
     expect(selected.media.length).to.equal(subDir.media.length);
+    expect(await conn.getRepository(PersonJunctionTable).count()).to.equal(3000);
   }) as any).timeout(40000);
+
+  it('should remove face associations when all faces disappear', async () => {
+    const im = new IndexingManagerTest();
+    const parent = TestHelper.getRandomizedDirectoryEntry();
+    const photo = TestHelper.getRandomizedPhotoEntry(parent, 'PhotoWithFaces', 2);
+    DirectoryDTOUtils.removeReferences(parent);
+
+    await im.saveToDB(Utils.clone(parent) as ParentDirectoryDTO);
+    const connection = await SQLConnection.getConnection();
+    expect(await connection.getRepository(PersonJunctionTable).count()).to.equal(2);
+
+    delete photo.metadata.faces;
+    await im.saveToDB(Utils.clone(parent) as ParentDirectoryDTO);
+
+    expect(await connection.getRepository(PersonJunctionTable).count()).to.equal(0);
+  });
 
   it('should save .md with date', async () => {
     Config.Album.enabled = true;
@@ -680,7 +698,7 @@ describe('IndexingManager', (sqlHelper: DBTestHelper) => {
   });
 
   DBTestHelper.savedDescribe('Test listDirectory', () => {
-    const statSync = fs.statSync;
+    const originalStat = fs.promises.stat;
     let dirTime = 0;
     const indexedTime = {
       lastScanned: 0,
@@ -698,7 +716,7 @@ describe('IndexingManager', (sqlHelper: DBTestHelper) => {
     afterEach(() => {
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
-      fs.statSync = statSync;
+      fs.promises.stat = originalStat;
     });
 
     it('with re indexing severity low', async () => {
@@ -706,7 +724,7 @@ describe('IndexingManager', (sqlHelper: DBTestHelper) => {
 
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
-      fs.statSync = () => ({ctime: new Date(dirTime), mtime: new Date(dirTime)});
+      fs.promises.stat = async (): Promise<any> => ({ctime: new Date(dirTime), mtime: new Date(dirTime)});
       const gm = new GalleryManagerTest();
       const session = DBTestHelper.defaultSession;
       gm.getDirIdAndTime = () => {

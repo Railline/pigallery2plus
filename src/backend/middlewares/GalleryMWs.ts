@@ -267,11 +267,13 @@ export class GalleryMWs {
       const pairLivePhotos = (mediaList: MediaDTO[], parentDir?: ParentDirectoryDTO): MediaDTO[] => {
         // Build a map of (contentIdentifier + dirPath) → video for companion videos
         const companionMap = new Map<string, MediaDTO>();
+        const videos = new Set<MediaDTO>();
         for (const m of mediaList) {
-          if (
-            MediaDTOUtils.isVideo(m) &&
-            m.metadata?.contentIdentifier
-          ) {
+          const isVideo = MediaDTOUtils.isVideo(m);
+          if (isVideo) {
+            videos.add(m);
+          }
+          if (isVideo && m.metadata?.contentIdentifier) {
             const dir = m.directory || parentDir;
             const dirPath = path.join(dir?.path || '', dir?.name || '');
             companionMap.set(m.metadata.contentIdentifier + '|' + dirPath, m);
@@ -282,7 +284,7 @@ export class GalleryMWs {
         const pairedVideoKeys = new Set<string>();
         for (const m of mediaList) {
           if (
-            !MediaDTOUtils.isVideo(m) &&
+            !videos.has(m) &&
             m.metadata?.contentIdentifier
           ) {
             const dir = m.directory || parentDir;
@@ -312,7 +314,7 @@ export class GalleryMWs {
 
         return mediaList.filter(
           (m) => {
-            if (!MediaDTOUtils.isVideo(m) || !m.metadata?.contentIdentifier) {
+            if (!videos.has(m) || !m.metadata?.contentIdentifier) {
               return true;
             }
             const dir = m.directory || parentDir;

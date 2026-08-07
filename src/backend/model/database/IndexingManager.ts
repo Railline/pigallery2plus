@@ -408,16 +408,29 @@ export class IndexingManager {
         dir: currentDirId,
       })
       .getMany();
+    const childDirectoriesByName = new Map<
+      string,
+      { directories: DirectoryEntity[]; next: number }
+    >();
+    for (const child of childDirectories) {
+      const group = childDirectoriesByName.get(child.name);
+      if (group) {
+        group.directories.push(child);
+      } else {
+        childDirectoriesByName.set(child.name, {
+          directories: [child],
+          next: 0,
+        });
+      }
+    }
+    const matchedChildDirectories = new Set<DirectoryEntity>();
 
     for (const directory of scannedDirectory.directories) {
       // Was this child Dir already indexed before?
-      const dirIndex = childDirectories.findIndex(
-        (d): boolean => d.name === directory.name
-      );
-
-      if (dirIndex !== -1) {
+      const group = childDirectoriesByName.get(directory.name);
+      if (group && group.next < group.directories.length) {
         // directory found
-        childDirectories.splice(dirIndex, 1);
+        matchedChildDirectories.add(group.directories[group.next++]);
       } else {
         // dir does not exist yet
         directory.parent = {id: currentDirId} as ParentDirectoryDTO;
@@ -435,8 +448,11 @@ export class IndexingManager {
     }
 
     // Remove child Dirs that are not anymore in the parent dir
-    await directoryRepository.remove(childDirectories, {
-      chunk: Math.max(Math.ceil(childDirectories.length / 500), 1),
+    const childDirectoriesToRemove = childDirectories.filter(
+      (directory) => !matchedChildDirectories.has(directory)
+    );
+    await directoryRepository.remove(childDirectoriesToRemove, {
+      chunk: Math.max(Math.ceil(childDirectoriesToRemove.length / 500), 1),
     });
   }
 
@@ -454,17 +470,28 @@ export class IndexingManager {
         dir: currentDirID,
       })
       .getMany();
+    const indexedMetaFilesByName = new Map<
+      string,
+      { files: FileEntity[]; next: number }
+    >();
+    for (const file of indexedMetaFiles) {
+      const group = indexedMetaFilesByName.get(file.name);
+      if (group) {
+        group.files.push(file);
+      } else {
+        indexedMetaFilesByName.set(file.name, {files: [file], next: 0});
+      }
+    }
+    const matchedMetaFiles = new Set<FileEntity>();
 
     const metaFilesToInsert = [];
     const MDFilesToUpdate = [];
     for (const item of scannedDirectory.metaFile) {
+      const group = indexedMetaFilesByName.get(item.name);
       let metaFile: FileDTO = null;
-      for (let j = 0; j < indexedMetaFiles.length; j++) {
-        if (indexedMetaFiles[j].name === item.name) {
-          metaFile = indexedMetaFiles[j];
-          indexedMetaFiles.splice(j, 1);
-          break;
-        }
+      if (group && group.next < group.files.length) {
+        metaFile = group.files[group.next++];
+        matchedMetaFiles.add(metaFile as FileEntity);
       }
       if (metaFile == null) {
         // not in DB yet
@@ -481,8 +508,11 @@ export class IndexingManager {
       }
     }
 
-    const MDFiles = metaFilesToInsert.filter(f => !isNaN((f as MDFileDTO).date));
-    const generalFiles = metaFilesToInsert.filter(f => isNaN((f as MDFileDTO).date));
+    const MDFiles: FileDTO[] = [];
+    const generalFiles: FileDTO[] = [];
+    for (const file of metaFilesToInsert) {
+      (isNaN((file as MDFileDTO).date) ? generalFiles : MDFiles).push(file);
+    }
     await fileRepository.save(generalFiles, {
       chunk: Math.max(Math.ceil(generalFiles.length / 500), 1),
     });
@@ -492,8 +522,9 @@ export class IndexingManager {
     await MDfileRepository.save(MDFilesToUpdate, {
       chunk: Math.max(Math.ceil(MDFilesToUpdate.length / 500), 1),
     });
-    await fileRepository.remove(indexedMetaFiles, {
-      chunk: Math.max(Math.ceil(indexedMetaFiles.length / 500), 1),
+    const metaFilesToRemove = indexedMetaFiles.filter((file) => !matchedMetaFiles.has(file));
+    await fileRepository.remove(metaFilesToRemove, {
+      chunk: Math.max(Math.ceil(metaFilesToRemove.length / 500), 1),
     });
   }
 
@@ -564,32 +595,33 @@ export class IndexingManager {
         }
       }
 
-      personsPerPhoto.push({
-        faces: scannedFaces,
-        mediaName: mediaItem.name
-      });
+      if (scannedFaces.length > 0) {
+        personsPerPhoto.push({
+          faces: scannedFaces,
+          mediaName: mediaItem.name
+        });
+      }
     }
 
     await this.saveChunk(photoRepository, mediaChange.saveP, 500);
     await this.saveChunk(videoRepository, mediaChange.saveV, 500);
-    await this.saveChunk(photoRepository, mediaChange.insertP, 500);
-    await this.saveChunk(videoRepository, mediaChange.insertV, 500);
-
-    const savedMedia = await mediaRepository
-      .createQueryBuilder('media')
-      .where('media.directory = :dir', {
-        dir: parentDirId,
-      })
-      .select(['media.name', 'media.id'])
-      .getMany();
-    const savedMediaIdByName = new Map<string, number>();
-    savedMedia.forEach((item): void => {
-      savedMediaIdByName.set(item.name, item.id);
-    });
+    const insertedPhotos = await this.saveChunk(
+      photoRepository,
+      mediaChange.insertP,
+      500
+    );
+    const insertedVideos = await this.saveChunk(
+      videoRepository,
+      mediaChange.insertV,
+      500
+    );
+    for (const item of [...insertedPhotos, ...insertedVideos]) {
+      indexedMediaByName.set(item.name, item as MediaEntity);
+    }
 
     const persons: { name: string; mediaId: number }[] = [];
     personsPerPhoto.forEach((group): void => {
-      const mediaId = savedMediaIdByName.get(group.mediaName);
+      const mediaId = indexedMediaByName.get(group.mediaName)?.id;
       if (typeof mediaId === 'undefined') {
         return;
       }

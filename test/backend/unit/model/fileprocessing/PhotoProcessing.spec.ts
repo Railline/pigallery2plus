@@ -2,6 +2,8 @@ import {expect} from 'chai';
 import {Config} from '../../../../../src/common/config/private/Config';
 import {ProjectPath} from '../../../../../src/backend/ProjectPath';
 import * as path from 'path';
+import * as os from 'os';
+import * as fsp from 'fs/promises';
 import {
   calculateThumbnailConcurrency,
   PhotoProcessing,
@@ -51,6 +53,62 @@ describe('PhotoProcessing', () => {
       expect(await processing.shouldUseFfmpegAnimatedThumbnail(input)).to.equal(true);
     } finally {
       ImageRendererFactory.metadata = originalMetadata;
+    }
+  });
+
+  it('should deduplicate concurrent generation before asynchronous prechecks', async () => {
+    const originalImageFolder = ProjectPath.ImageFolder;
+    const originalTranscodedFolder = ProjectPath.TranscodedFolder;
+    const processing = PhotoProcessing as unknown as {
+      removeFailedThumbnailIfSourceIsReadable(
+        input: MediaRendererInput,
+        outPath: string
+      ): Promise<void>;
+    };
+    const originalPrecheck = processing.removeFailedThumbnailIfSourceIsReadable;
+    const tempFolder = await fsp.mkdtemp(path.join(os.tmpdir(), 'pg2-thumbnail-lock-'));
+    let releasePrecheck: () => void;
+    const precheckGate = new Promise<void>((resolve) => {
+      releasePrecheck = resolve;
+    });
+    let precheckCalls = 0;
+
+    try {
+      ProjectPath.ImageFolder = path.join(tempFolder, 'images');
+      ProjectPath.TranscodedFolder = path.join(tempFolder, 'transcoded');
+      await fsp.mkdir(ProjectPath.ImageFolder, {recursive: true});
+      const mediaPath = path.join(ProjectPath.ImageFolder, 'photo.jpg');
+      await fsp.writeFile(mediaPath, 'source');
+      const outPath = PhotoProcessing.generateConvertedPath(mediaPath, 320);
+      await fsp.mkdir(path.dirname(outPath), {recursive: true});
+      await fsp.writeFile(outPath, 'cached');
+
+      processing.removeFailedThumbnailIfSourceIsReadable = async (): Promise<void> => {
+        precheckCalls++;
+        await precheckGate;
+      };
+
+      const first = PhotoProcessing.generateThumbnail(
+        mediaPath,
+        320,
+        ThumbnailSourceType.Photo,
+        false
+      );
+      const second = PhotoProcessing.generateThumbnail(
+        mediaPath,
+        320,
+        ThumbnailSourceType.Photo,
+        false
+      );
+
+      expect(precheckCalls).to.equal(1);
+      releasePrecheck();
+      expect(await Promise.all([first, second])).to.deep.equal([outPath, outPath]);
+    } finally {
+      processing.removeFailedThumbnailIfSourceIsReadable = originalPrecheck;
+      ProjectPath.ImageFolder = originalImageFolder;
+      ProjectPath.TranscodedFolder = originalTranscodedFolder;
+      await fsp.rm(tempFolder, {recursive: true, force: true});
     }
   });
 
