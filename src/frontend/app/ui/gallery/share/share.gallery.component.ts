@@ -35,6 +35,7 @@ export class GalleryShareComponent implements OnInit, OnDestroy {
   @Input() dropDownItem = false;
   url = '';
   urlValid = false;
+  isSubmitting = false;
   showSharingList = false;
 
   input = {
@@ -189,6 +190,9 @@ export class GalleryShareComponent implements OnInit, OnDestroy {
   }
 
   async get(): Promise<void> {
+    if (this.isSubmitting) {
+      return;
+    }
     if(Config.Sharing.passwordRequired && !this.input.password){
       this.url = $localize`Set password.`;
       return;
@@ -199,6 +203,7 @@ export class GalleryShareComponent implements OnInit, OnDestroy {
     }
     this.urlValid = false;
     this.url = $localize`loading..`;
+    this.isSubmitting = true;
     try {
       this.sharing = await this.sharingService.createSharingByQuery(
           this.currentQuery,
@@ -216,12 +221,15 @@ export class GalleryShareComponent implements OnInit, OnDestroy {
           (err as any)?.message || err || $localize`Server error`,
           $localize`Sharing error`
       );
+    } finally {
+      this.isSubmitting = false;
     }
   }
 
   async openModal(template: TemplateRef<unknown>): Promise<void> {
     this.url = $localize`Click share to get a link.`;
     this.urlValid = false;
+    this.isSubmitting = false;
     this.sharing = null;
     this.input.password = '';
     if (this.modalRef) {

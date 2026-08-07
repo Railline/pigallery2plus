@@ -40,7 +40,7 @@
               id="getShareButton" name="getShareButton"
               type="button"
               (click)="share()"
-              [disabled]="!shareForm.form.valid || !urlValid"
+              [disabled]="!shareForm.form.valid || isSubmitting"
               class="btn btn-primary btn-block float-end"
             i18n>Share</button>
           }
