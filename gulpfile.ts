@@ -260,6 +260,27 @@ gulp.task('copy-package', (): any =>
     .pipe(gulp.dest('./release'))
 );
 
+gulp.task('create-release-lock', async (): Promise<void> => {
+  await fsp.copyFile(
+    './package-lock.json',
+    './release/package-lock.json'
+  );
+  await execFilePr(
+    process.platform === 'win32' ? 'npm.cmd' : 'npm',
+    [
+      'install',
+      '--package-lock-only',
+      '--omit=dev',
+      '--include=optional',
+      '--ignore-scripts',
+      '--offline',
+      '--no-audit',
+      '--no-fund',
+    ],
+    {cwd: './release'}
+  );
+});
+
 gulp.task('zip-release', (): any =>
   gulp
     .src(['release/**/*'], {base: './release'})
@@ -501,6 +522,7 @@ gulp.task(
     'build-backend',
     'copy-static',
     'copy-package',
+    'create-release-lock',
     'zip-release'
   )
 );

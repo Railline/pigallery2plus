@@ -1,6 +1,6 @@
 #-----------------BUILDER-----------------
 #-----------------------------------------
-FROM node:22-trixie AS builder
+FROM node:22-trixie@sha256:8433642fe11d391a7ff1f702352ac1b0ea3e378d3fb2c22de2b292036d79cd2c AS builder
 # LABEL maintainer="Patrik J. Braun"
 
 # The full Node image already contains git and the native build toolchain. Sharp
@@ -10,21 +10,24 @@ ARG PIGALLERY_REPOSITORY=https://github.com/Railline/pigallery2plus.git
 ARG PIGALLERY_REF=main
 RUN git clone --depth 1 --branch "$PIGALLERY_REF" "$PIGALLERY_REPOSITORY" /build
 WORKDIR /build
-RUN npm ci --include=optional --unsafe-perm \
+RUN npm ci --include=optional \
     && mkdir -p /build/release/data/config \
     && mkdir -p /build/release/data/db \
     && mkdir -p /build/release/data/images \
     && mkdir -p /build/release/data/tmp \
     && npm run create-release -- --skip-opt-packages=ffmpeg-static,ffprobe-static --force-opt-packages
 WORKDIR /build/release
-RUN npm install --omit=dev --include=optional --unsafe-perm --no-package-lock \
+RUN npm ci --omit=dev --include=optional \
+    && npm audit signatures \
+    && npm audit --omit=dev --audit-level=high \
     && npm cache clean --force
 
 #-----------------MAIN--------------------
 #-----------------------------------------
-FROM node:22-trixie-slim AS main
+FROM node:22-trixie-slim@sha256:517aa41d78545cb1b8c67b13655b4c13ede1ee9df1da8aab54cd7434aefbcaf8 AS main
 ARG NPM_VERSION=12.0.2
-ARG BRACE_EXPANSION_VERSION=5.0.8
+ARG BRACE_EXPANSION_VERSION=5.0.9
+ARG IP_ADDRESS_VERSION=10.3.1
 WORKDIR /app
 ENV NODE_ENV=production \
     # overrides only the default value of the settings (the actualy value can be overwritten through config.json)
@@ -38,6 +41,7 @@ ENV NODE_ENV=production \
 EXPOSE 80
 ARG TARGETARCH
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends ca-certificates ffmpeg \
     && if [ "$TARGETARCH" = "amd64" ]; then \
         echo "Building for amd64, adding intel-media-va-driver" && \
@@ -47,10 +51,16 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 # Extension installation needs npm at runtime. Replace the vulnerable npm bundled
 # in the base image and its one dependency that is newer than npm's current pin.
-RUN npm install --global "npm@${NPM_VERSION}" "brace-expansion@${BRACE_EXPANSION_VERSION}" \
+RUN npm install --global --ignore-scripts --no-audit --fund=false \
+        "npm@${NPM_VERSION}" \
+        "brace-expansion@${BRACE_EXPANSION_VERSION}" \
+        "ip-address@${IP_ADDRESS_VERSION}" \
     && rm -r /usr/local/lib/node_modules/npm/node_modules/brace-expansion \
     && cp -a /usr/local/lib/node_modules/brace-expansion /usr/local/lib/node_modules/npm/node_modules/brace-expansion \
     && rm -r /usr/local/lib/node_modules/brace-expansion \
+    && rm -r /usr/local/lib/node_modules/npm/node_modules/ip-address \
+    && cp -a /usr/local/lib/node_modules/ip-address /usr/local/lib/node_modules/npm/node_modules/ip-address \
+    && rm -r /usr/local/lib/node_modules/ip-address \
     && npm cache clean --force
 COPY --from=builder /build/release /app
 COPY --from=builder /build/pigallery2plus-entrypoint.js /usr/local/bin/pigallery2plus-entrypoint.js

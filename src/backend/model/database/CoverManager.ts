@@ -133,8 +133,8 @@ export class CoverManager {
       if (scope === 'direct') {
         query.where('media.directory = :dir', {dir: dir.id});
       } else if (Config.Database.type === DatabaseType.mysql) {
-        query.where('directory.path like :path || \'%\'', {
-          path: DiskManager.pathFromParent(dir),
+        query.where('directory.path LIKE :path', {
+          path: DiskManager.pathFromParent(dir) + '%',
         });
       } else {
         query.where('directory.path GLOB :path', {

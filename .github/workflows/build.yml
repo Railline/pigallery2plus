@@ -97,7 +97,10 @@ jobs:
           node-version: 22
       -
         name: Install Deps
-        run: npm install --unsafe-perm
+        run: npm ci --include=optional
+      -
+        name: Verify dependency integrity
+        run: npm audit signatures && npm audit --omit=dev --audit-level=high
       -
         name: Create Release
         run: npm run create-release -- --skip-opt-packages=ffmpeg-static,ffprobe-static --force-opt-packages

@@ -57,7 +57,7 @@ cd "$BUILD_DIR"
 
 echo "--- 3. Installing Build Dependencies ---"
 # Keep optional packages so the release can select the right platform binaries.
-npm ci --include=optional --unsafe-perm
+npm ci --include=optional
 
 echo "--- 4. Creating Production Release ---"
 # This mirrors the GitHub Action workflow you provided
