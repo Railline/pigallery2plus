@@ -86,9 +86,11 @@ export class GalleryManager {
       '.' :
       relativeDirectoryName;
     const absoluteDirectoryName = path.resolve(mediaRoot, relativePath);
+    const directoryPathFromRoot = path.relative(mediaRoot, absoluteDirectoryName);
     if (
-      absoluteDirectoryName !== mediaRoot &&
-      !absoluteDirectoryName.startsWith(mediaRoot + path.sep)
+      directoryPathFromRoot === '..' ||
+      directoryPathFromRoot.startsWith('..' + path.sep) ||
+      path.isAbsolute(directoryPathFromRoot)
     ) {
       return null;
     }
