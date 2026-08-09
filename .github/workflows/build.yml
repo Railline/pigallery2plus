@@ -1,4 +1,6 @@
 name: docker-buildx
+env:
+  NPM_CLI_VERSION: 12.0.2
 on:
   pull_request:
     branches:
@@ -40,9 +42,12 @@ jobs:
           sleep 1
         done
 
+    - name: Install hardened npm CLI
+      run: npm install --global --ignore-scripts --no-audit --fund=false "npm@${NPM_CLI_VERSION}"
+
     - name: npm install and build
       run: |
-        npm ci --include=optional
+        npm ci --include=optional --strict-allow-scripts --allow-git=none --allow-remote=none
         npm run build
 
     - name: lint
@@ -76,6 +81,7 @@ jobs:
         DEBUG: '@cypress/github-action'
       with:
         start: npm run start-e2e-server
+        install: false
       # after the test run completes store screenshots
     - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
       if: failure() # Store screenshots only on failures
@@ -96,8 +102,11 @@ jobs:
         with:
           node-version: 22
       -
+        name: Install hardened npm CLI
+        run: npm install --global --ignore-scripts --no-audit --fund=false "npm@${NPM_CLI_VERSION}"
+      -
         name: Install Deps
-        run: npm ci --include=optional
+        run: npm ci --include=optional --strict-allow-scripts --allow-git=none --allow-remote=none
       -
         name: Verify dependency integrity
         run: npm audit signatures && npm audit --omit=dev --audit-level=high

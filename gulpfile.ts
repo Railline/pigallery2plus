@@ -207,6 +207,7 @@ gulp.task('copy-package', (): any =>
         (json: {
           devDependencies: { [key: string]: string };
           scripts: { [key: string]: string };
+          allowScripts: { [key: string]: boolean };
           dependencies: { [key: string]: string };
           optionalDependencies: { [key: string]: string };
           buildTime: string;
@@ -214,6 +215,7 @@ gulp.task('copy-package', (): any =>
         }): {
           devDependencies: { [p: string]: string };
           scripts: { [p: string]: string };
+          allowScripts: { [p: string]: boolean };
           dependencies: { [p: string]: string };
           optionalDependencies: { [p: string]: string };
           buildTime: string;
@@ -241,6 +243,17 @@ gulp.task('copy-package', (): any =>
             }
             delete json.optionalDependencies;
           }
+          const runtimeDependencies = {
+            ...json.dependencies,
+            ...(json.optionalDependencies ?? {}),
+          };
+          json.allowScripts = Object.fromEntries(
+            Object.entries(json.allowScripts).filter(([entry]) =>
+              Object.entries(runtimeDependencies).some(
+                ([name, version]) => entry === `${name}@${version}`
+              )
+            )
+          );
           json.buildTime = new Date().toISOString();
 
           try {
@@ -271,6 +284,7 @@ gulp.task('create-release-lock', async (): Promise<void> => {
       'install',
       '--package-lock-only',
       '--omit=dev',
+      '--omit=peer',
       '--include=optional',
       '--ignore-scripts',
       '--offline',

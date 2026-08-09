@@ -9,20 +9,21 @@ REPO_URL="${REPO_URL:-https://github.com/Railline/pigallery2plus.git}"
 REPO_REF="${REPO_REF:-main}"
 BUILD_DIR="$(mktemp -d -t pigallery2plus-build.XXXXXX)"
 IMAGE_NAME="${IMAGE_NAME:-pigallery2plus:local}"
+NPM_CLI_VERSION="${NPM_CLI_VERSION:-12.0.2}"
 trap 'rm -rf -- "$BUILD_DIR"' EXIT
 
 echo "--- 1. Pre-flight Environment Check ---"
 
 # Check for Node.js
 if ! command -v node &> /dev/null; then
-    echo "Error: node is not installed. Please install Node.js 22.12 or newer."
+    echo "Error: node is not installed. Please install Node.js 22.22.2 or newer."
     exit 1
 else
     NODE_VER=$(node -v)
     echo "Found Node.js: $NODE_VER"
 fi
-if ! node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit((major === 22 && minor >= 12) || major === 23 ? 0 : 1)'; then
-    echo "Error: unsupported Node.js version. Expected >=22.12 and <24."
+if ! node -e 'const [major, minor, patch] = process.versions.node.split(".").map(Number); process.exit(major === 22 && (minor > 22 || (minor === 22 && patch >= 2)) ? 0 : 1)'; then
+    echo "Error: unsupported Node.js version. Expected >=22.22.2 and <23."
     exit 1
 fi
 
@@ -57,11 +58,13 @@ cd "$BUILD_DIR"
 
 echo "--- 3. Installing Build Dependencies ---"
 # Keep optional packages so the release can select the right platform binaries.
-npm ci --include=optional
+npx --yes "npm@${NPM_CLI_VERSION}" ci --include=optional \
+    --strict-allow-scripts --allow-git=none --allow-remote=none
 
 echo "--- 4. Creating Production Release ---"
 # This mirrors the GitHub Action workflow you provided
-npm run create-release -- --skip-opt-packages=ffmpeg-static,ffprobe-static --force-opt-packages
+npx --yes "npm@${NPM_CLI_VERSION}" run create-release -- \
+    --skip-opt-packages=ffmpeg-static,ffprobe-static --force-opt-packages
 
 echo "--- 5. Building Docker Image (Debian Trixie) ---"
 # Match the Dockerfile expectation: rename 'release' to 'pigallery2-release'

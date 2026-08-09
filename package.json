@@ -30,6 +30,18 @@
     "cypress:run": "cypress run",
     "build-extension-interface": "tsc -p extension/ext-interface.tsconfig.json && tsc -p extension/ext-enums.tsconfig.json"
   },
+  "allowScripts": {
+    "@parcel/watcher@2.5.1": true,
+    "bcrypt@6.0.0": true,
+    "better-sqlite3@11.10.0": true,
+    "cypress@15.19.0": true,
+    "esbuild@0.28.1": true,
+    "exifreader@4.41.3": true,
+    "ffmpeg-static@5.2.0": true,
+    "fsevents@2.3.3": true,
+    "lmdb@3.5.1": true,
+    "msgpackr-extract@3.0.4": true
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Railline/pigallery2plus.git"
@@ -153,7 +165,11 @@
     "beasties": "^0.3.3",
     "@modelcontextprotocol/sdk": "1.30.0",
     "@hono/node-server": "2.0.12",
-    "postcss": "8.5.18",
+    "hono": "4.12.34",
+    "postcss": "8.5.23",
+    "@angular/build": {
+      "undici": "7.29.0"
+    },
     "webpack-dev-server": "5.2.6",
     "sockjs": {
       "uuid": "11.1.1"
@@ -167,6 +183,7 @@
     "remove besties": "after angular v20: https://stackoverflow.com/questions/76798190/i-get-error-form-floatinglabel-in-ng-build"
   },
   "engines": {
-    "node": ">=22.12 <24.0"
+    "node": ">=22.22.2 <23.0",
+    "npm": ">=12.0.2 <13.0"
   }
 }
