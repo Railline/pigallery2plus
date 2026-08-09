@@ -67,6 +67,69 @@ describe('FrontendAssetCache', () => {
     expect(headers['ETag']).to.match(/^"[a-f0-9]{32}-/);
   });
 
+  it('rejects immutable symlinks that escape the frontend root', () => {
+    const externalRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pigallery-frontend-secret-'));
+    const secretPath = path.join(externalRoot, 'secret.js');
+    const linkedPath = path.join(root, 'en', 'main.0123456789abcdef.js');
+    try {
+      fs.writeFileSync(secretPath, 'secret');
+      fs.symlinkSync(secretPath, linkedPath);
+
+      const cache = new FrontendAssetCache();
+      cache.preload(root);
+
+      expect(cache.send(
+        {fresh: false, method: 'GET'} as any,
+        {} as any,
+        linkedPath
+      )).to.equal(false);
+      expect(cache.resolveForFallback(linkedPath)).to.equal(null);
+    } finally {
+      fs.rmSync(externalRoot, {recursive: true, force: true});
+    }
+  });
+
+  it('serves an immutable symlink whose target remains inside the frontend root', () => {
+    const targetPath = path.join(root, 'en', 'target.js');
+    const linkedPath = path.join(root, 'en', 'main.0123456789abcdef.js');
+    fs.writeFileSync(targetPath, 'internal');
+    fs.symlinkSync(targetPath, linkedPath);
+
+    const cache = new FrontendAssetCache();
+    cache.preload(root);
+    let body: Buffer = null;
+    const response = {
+      type: (): any => response,
+      setHeader: (): any => response,
+      status: (): any => response,
+      end: (value?: Buffer): any => {
+        body = value;
+        return response;
+      },
+    } as any;
+
+    expect(cache.send(
+      {fresh: false, method: 'GET'} as any,
+      response,
+      linkedPath
+    )).to.equal(true);
+    expect(body.toString()).to.equal('internal');
+  });
+
+  it('resolves only fallback assets contained by the frontend root', () => {
+    const filePath = path.join(root, 'en', 'manifest.json');
+    fs.writeFileSync(filePath, '{}');
+    const cache = new FrontendAssetCache();
+    cache.preload(root);
+
+    const location = cache.resolveForFallback(filePath);
+    expect(location).to.deep.equal({
+      root: fs.realpathSync(root),
+      relativePath: path.join('en', 'manifest.json'),
+    });
+    expect(cache.resolveForFallback(path.join(root, '..', 'outside.json'))).to.equal(null);
+  });
+
   it('only treats content-hashed file names as immutable', () => {
     expect(FrontendAssetCache.isImmutable('main.0123456789abcdef.js')).to.equal(true);
     expect(FrontendAssetCache.isImmutable('main.js')).to.equal(false);

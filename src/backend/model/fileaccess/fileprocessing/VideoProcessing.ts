@@ -86,6 +86,11 @@ export class VideoProcessing {
   }
 
   private static async convertVideoInternal(videoPath: string): Promise<void> {
+    const mediaRoot = path.resolve(ProjectPath.ImageFolder);
+    videoPath = path.resolve(videoPath);
+    if (!videoPath.startsWith(mediaRoot + path.sep)) {
+      throw new Error('Video path is outside image folder');
+    }
     const outPath = this.generateConvertedFilePath(videoPath);
 
     try {

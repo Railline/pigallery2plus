@@ -158,13 +158,18 @@ export class PhotoProcessing {
     if (!convertedDir) {
       throw new Error('Converted path is outside transcoded folder: ' + mediaPath);
     }
-    return path.join(
+    const candidate = path.resolve(
       convertedDir,
       file + '_' + size + 'q' + Config.Media.Photo.quality +
       (animated ? 'anim' : '') +
       (Config.Media.Photo.smartSubsample ? 'cs' : '') +
       PhotoProcessing.CONVERTED_EXTENSION
     );
+    const transcodedRoot = path.resolve(ProjectPath.TranscodedFolder);
+    if (!candidate.startsWith(transcodedRoot + path.sep)) {
+      throw new Error('Converted path is outside transcoded folder: ' + mediaPath);
+    }
+    return candidate;
   }
 
   private static generateFailureMarkerPath(outPath: string): string {
@@ -466,7 +471,11 @@ export class PhotoProcessing {
     size: number
   ): Promise<boolean> {
     // generate thumbnail path
-    const outPath = PhotoProcessing.generateConvertedPath(mediaPath, size);
+    const outPath = path.resolve(PhotoProcessing.generateConvertedPath(mediaPath, size));
+    const transcodedRoot = path.resolve(ProjectPath.TranscodedFolder);
+    if (!outPath.startsWith(transcodedRoot + path.sep)) {
+      throw new Error('Thumbnail output path is outside transcoded folder: ' + mediaPath);
+    }
 
     await PhotoProcessing.removeRegenerableFailedThumbnail(outPath);
 
@@ -488,7 +497,11 @@ export class PhotoProcessing {
     makeSquare: boolean
   ): Promise<string> {
     // generate thumbnail path
-    const outPath = PhotoProcessing.generateConvertedPath(mediaPath, size);
+    const outPath = path.resolve(PhotoProcessing.generateConvertedPath(mediaPath, size));
+    const transcodedRoot = path.resolve(ProjectPath.TranscodedFolder);
+    if (!outPath.startsWith(transcodedRoot + path.sep)) {
+      throw new Error('Thumbnail output path is outside transcoded folder: ' + mediaPath);
+    }
 
     const runningGeneration = PhotoProcessing.thumbnailGenerationInFlight.get(outPath);
     if (runningGeneration) {
@@ -593,7 +606,13 @@ export class PhotoProcessing {
 
     for (const size of candidates) {
       try {
-        const thumbnailPath = PhotoProcessing.generateConvertedPath(mediaPath, size);
+        const thumbnailPath = path.resolve(
+          PhotoProcessing.generateConvertedPath(mediaPath, size)
+        );
+        const transcodedRoot = path.resolve(ProjectPath.TranscodedFolder);
+        if (!thumbnailPath.startsWith(transcodedRoot + path.sep)) {
+          return null;
+        }
         await fsp.access(thumbnailPath, fsConstants.R_OK);
         return thumbnailPath;
       } catch (error) {

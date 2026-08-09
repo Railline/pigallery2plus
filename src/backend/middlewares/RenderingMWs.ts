@@ -104,7 +104,11 @@ export class RenderingMWs {
     if (!req.resultPipe) {
       return next();
     }
-    const filePath = req.resultPipe as string;
+    const requestedFilePath = req.resultPipe as string;
+    const filePath = path.resolve(requestedFilePath);
+    const mediaRoot = path.resolve(ProjectPath.ImageFolder);
+    const tempRoot = path.resolve(ProjectPath.TempFolder);
+    let fileRoot: string;
     let release: (() => void) | null = null;
     const releaseOnce = (): void => {
       if (!release) {
@@ -116,7 +120,8 @@ export class RenderingMWs {
       res.removeListener('close', releaseOnce);
       currentRelease();
     };
-    if (RenderingMWs.isOriginalMedia(filePath)) {
+    if (filePath.startsWith(mediaRoot + path.sep)) {
+      fileRoot = mediaRoot;
       const abortController = new AbortController();
       const abortWhileQueued = (): void => abortController.abort();
       res.once('close', abortWhileQueued);
@@ -158,6 +163,14 @@ export class RenderingMWs {
           'can\'t find file: ' + filePath
         ));
       }
+    } else if (filePath.startsWith(tempRoot + path.sep)) {
+      fileRoot = tempRoot;
+    } else {
+      return next(new ErrorDTO(
+        ErrorCodes.PATH_ERROR,
+        'no such file:' + (req.params['mediaPath'] || path.basename(requestedFilePath)),
+        'Refusing to serve a file outside the configured media and temporary folders'
+      ));
     }
 
     const fileName = path.basename(filePath);
@@ -169,8 +182,8 @@ export class RenderingMWs {
     res.setHeader('Content-Disposition', RenderingMWs.contentDispositionInline(fileName));
 
     try {
-      res.sendFile(path.basename(filePath), {
-        root: path.dirname(filePath),
+      res.sendFile(path.relative(fileRoot, filePath), {
+        root: fileRoot,
         maxAge: 365 * 24 * 60 * 60 * 1000,
         immutable: true,
         dotfiles: 'allow',
@@ -181,13 +194,6 @@ export class RenderingMWs {
       releaseOnce();
       return next(error);
     }
-  }
-
-  private static isOriginalMedia(filePath: string): boolean {
-    const relative = path.relative(ProjectPath.ImageFolder, filePath);
-    return relative !== '..' &&
-      !relative.startsWith('..' + path.sep) &&
-      !path.isAbsolute(relative);
   }
 
   private static contentDispositionInline(fileName: string): string {

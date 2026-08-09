@@ -19,6 +19,11 @@ export interface FrontendAssetCacheStats {
   uniqueBytes: number;
 }
 
+export interface FrontendAssetLocation {
+  root: string;
+  relativePath: string;
+}
+
 /**
  * Keeps immutable Angular build artifacts outside libuv's shared filesystem
  * queue. Media mounted from a slow NAS can otherwise delay a tiny JS or CSS
@@ -28,13 +33,21 @@ export class FrontendAssetCache {
   private readonly assets = new Map<string, CachedAsset>();
   private readonly sharedBodies = new Map<string, CachedAsset>();
   private frontendRoot = '';
+  private frontendRealRoot = '';
 
   public preload(frontendRoot: string, locales: string[] = ['en']): FrontendAssetCacheStats {
     this.assets.clear();
     this.sharedBodies.clear();
     this.frontendRoot = path.resolve(frontendRoot);
+    this.frontendRealRoot = '';
 
-    if (!fs.existsSync(frontendRoot)) {
+    if (!fs.existsSync(this.frontendRoot)) {
+      return {files: 0, uniqueAssets: 0, uniqueBytes: 0};
+    }
+    try {
+      this.frontendRealRoot = fs.realpathSync(this.frontendRoot);
+    } catch (error) {
+      Logger.warn(LOG_TAG, `Could not resolve frontend root ${this.frontendRoot}: ${String(error)}`);
       return {files: 0, uniqueAssets: 0, uniqueBytes: 0};
     }
 
@@ -127,6 +140,32 @@ export class FrontendAssetCache {
     return FrontendAssetCache.getFingerprint(path.basename(filePath)) !== null;
   }
 
+  /**
+   * Resolves an uncached asset for Express while keeping its trusted root
+   * separate from the request-derived relative path.
+   */
+  public resolveForFallback(filePath: string): FrontendAssetLocation | null {
+    const resolvedPath = path.resolve(filePath);
+    if (!FrontendAssetCache.isInside(this.frontendRoot, resolvedPath)) {
+      return null;
+    }
+    try {
+      const realPath = fs.realpathSync(resolvedPath);
+      if (
+        !this.frontendRealRoot ||
+        !realPath.startsWith(this.frontendRealRoot + path.sep)
+      ) {
+        return null;
+      }
+      return {
+        root: this.frontendRealRoot,
+        relativePath: path.relative(this.frontendRealRoot, realPath),
+      };
+    } catch (error) {
+      return null;
+    }
+  }
+
   private static getFingerprint(fileName: string): {hash: string; extension: string} | null {
     const match = HASHED_ASSET.exec(fileName);
     if (!match) {
@@ -145,7 +184,14 @@ export class FrontendAssetCache {
       return existing;
     }
 
-    const body = fs.readFileSync(resolvedPath);
+    const realPath = fs.realpathSync(resolvedPath);
+    if (
+      !this.frontendRealRoot ||
+      !realPath.startsWith(this.frontendRealRoot + path.sep)
+    ) {
+      throw new Error('Frontend asset is outside the configured frontend folder');
+    }
+    const body = fs.readFileSync(realPath);
     const contentHash = createHash('sha256').update(body).digest('hex');
     const extension = path.extname(resolvedPath).toLowerCase();
     const sharedKey = `${contentHash}${extension}`;

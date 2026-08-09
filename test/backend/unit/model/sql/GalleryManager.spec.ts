@@ -229,6 +229,18 @@ describe('GalleryManager', (sqlHelper: DBTestHelper) => {
       fs.promises.stat = (async (): Promise<any> => ({ctime: new Date(t), mtime: new Date(t)})) as any;
     };
 
+    it('rejects an escaping directory before database or indexing work', async () => {
+      (gm as any).getDirIdAndTime = (): never => {
+        throw new Error('database lookup should not run');
+      };
+
+      expect(await gm.listDirectory(
+        sessionNoProj,
+        path.join('..', 'outside')
+      )).to.equal(null);
+      expect(bgCalls).to.equal(0);
+    });
+
     it('never: returns DB result when already scanned (no projection) and known times are missing', async () => {
       Config.Indexing.reIndexingSensitivity = ReIndexingSensitivity.never;
       indexed.lastScanned = 123;

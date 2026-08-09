@@ -1,6 +1,5 @@
 import {Express, NextFunction, Request, Response} from 'express';
 import * as path from 'path';
-import * as fs from 'fs';
 import * as ejs from 'ejs';
 import {Config} from '../../common/config/private/Config';
 import {ProjectPath} from '../ProjectPath';
@@ -354,15 +353,16 @@ export class PublicRouter {
         if (!file) {
           return res.sendStatus(404);
         }
-        if (!fs.existsSync(file)) {
-          return res.sendStatus(404);
-        }
         if (frontendAssetCache.send(req, res, file)) {
           return;
         }
+        const location = frontendAssetCache.resolveForFallback(file);
+        if (!location) {
+          return res.sendStatus(404);
+        }
         const immutable = FrontendAssetCache.isImmutable(file);
-        res.sendFile(path.basename(file), {
-          root: path.dirname(file),
+        res.sendFile(location.relativePath, {
+          root: location.root,
           maxAge: immutable ? ONE_YEAR_MS : 0,
           immutable,
           dotfiles: 'allow',

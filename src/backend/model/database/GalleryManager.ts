@@ -81,6 +81,17 @@ export class GalleryManager {
     mediaSortAscending = true
   ): Promise<ParentDirectoryDTO> {
     const pagedMediaRequest = Number.isFinite(mediaLimit) && mediaLimit > 0;
+    const mediaRoot = path.resolve(ProjectPath.ImageFolder);
+    const relativePath = relativeDirectoryName === path.sep || relativeDirectoryName === '/' ?
+      '.' :
+      relativeDirectoryName;
+    const absoluteDirectoryName = path.resolve(mediaRoot, relativePath);
+    if (
+      absoluteDirectoryName !== mediaRoot &&
+      !absoluteDirectoryName.startsWith(mediaRoot + path.sep)
+    ) {
+      return null;
+    }
     const directoryPath = GalleryManager.parseRelativeDirPath(
       relativeDirectoryName
     );
@@ -106,10 +117,6 @@ export class GalleryManager {
         return await this.getParentDirFromId(connection, session, dir.id, mediaOffset, mediaLimit, mediaSortMethod, mediaSortAscending);
       }
 
-      const absoluteDirectoryName = ProjectPath.resolveMediaPath(relativeDirectoryName);
-      if (!absoluteDirectoryName) {
-        return null;
-      }
       const stat = await fs.promises.stat(absoluteDirectoryName);
       const lastModified = DiskManager.calcLastModified(stat);
 

@@ -112,6 +112,61 @@ describe('PhotoProcessing', () => {
     }
   });
 
+  it('should keep valid thumbnail names while confining the final cache path', async () => {
+    const originalImageFolder = ProjectPath.ImageFolder;
+    const originalTranscodedFolder = ProjectPath.TranscodedFolder;
+    const originalAnimateGif = Config.Media.Photo.animateGif;
+    const originalSmartSubsample = Config.Media.Photo.smartSubsample;
+    const originalQuality = Config.Media.Photo.quality;
+    const tempFolder = await fsp.mkdtemp(path.join(os.tmpdir(), 'pg2-thumbnail-path-'));
+
+    try {
+      ProjectPath.ImageFolder = path.join(tempFolder, 'images');
+      ProjectPath.TranscodedFolder = path.join(tempFolder, 'transcoded');
+      Config.Media.Photo.animateGif = true;
+      Config.Media.Photo.smartSubsample = true;
+      Config.Media.Photo.quality = 85;
+
+      const mediaPath = path.join(
+        ProjectPath.ImageFolder,
+        'nested',
+        'vacances..été #1.gif'
+      );
+      const convertedPath = PhotoProcessing.generateConvertedPath(mediaPath, 320);
+      expect(convertedPath).to.equal(path.join(
+        ProjectPath.TranscodedFolder,
+        'nested',
+        'vacances..été #1.gif_320q85animcs.webp'
+      ));
+      expect(Config.Media.Photo.animateGif).to.equal(true);
+
+      expect(() => PhotoProcessing.generateConvertedPath(
+        path.join(tempFolder, 'images-evil', 'photo.jpg'),
+        320
+      )).to.throw('outside image folder');
+      expect(() => PhotoProcessing.generateConvertedPath(
+        path.join(ProjectPath.ImageFolder, '..', 'outside.jpg'),
+        320
+      )).to.throw('outside image folder');
+
+      const smaller = PhotoProcessing.generateConvertedPath(mediaPath, 160);
+      await fsp.mkdir(path.dirname(convertedPath), {recursive: true});
+      await fsp.writeFile(smaller, 'small');
+      await fsp.writeFile(convertedPath, 'large');
+      expect(await PhotoProcessing.findExistingThumbnail(
+        mediaPath,
+        [160, 320]
+      )).to.equal(convertedPath);
+    } finally {
+      ProjectPath.ImageFolder = originalImageFolder;
+      ProjectPath.TranscodedFolder = originalTranscodedFolder;
+      Config.Media.Photo.animateGif = originalAnimateGif;
+      Config.Media.Photo.smartSubsample = originalSmartSubsample;
+      Config.Media.Photo.quality = originalQuality;
+      await fsp.rm(tempFolder, {recursive: true, force: true});
+    }
+  });
+
   it('should generate converted gif file path', async () => {
 
     await Config.load();

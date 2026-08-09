@@ -7,6 +7,22 @@ import * as path from 'path';
 
 describe('VideoProcessing', () => {
 
+  it('should reject conversion paths outside the media root before file access', async () => {
+    const originalImageFolder = ProjectPath.ImageFolder;
+    ProjectPath.ImageFolder = path.join(__dirname, 'trusted-media-root');
+    let error: Error = null;
+    try {
+      await VideoProcessing.convertVideo(path.join(__dirname, 'outside.mp4'));
+    } catch (caught) {
+      error = caught as Error;
+    } finally {
+      ProjectPath.ImageFolder = originalImageFolder;
+    }
+
+    expect(error).to.be.instanceOf(Error);
+    expect(error.message).to.equal('Video path is outside image folder');
+  });
+
   /* eslint-disable no-unused-expressions,@typescript-eslint/no-unused-expressions */
   it('should generate converted file path', async () => {
 
