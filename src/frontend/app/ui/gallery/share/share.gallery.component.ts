@@ -6,13 +6,13 @@ import {ResponseSharingDTO} from '../../../../../common/entities/SharingDTO';
 import {Config} from '../../../../../common/config/public/Config';
 import {NotificationService} from '../../../model/notification.service';
 import {BsModalService} from 'ngx-bootstrap/modal';
-import {BsModalRef} from 'ngx-bootstrap/modal/bs-modal-ref.service';
+import {BsModalRef} from 'ngx-bootstrap/modal';
 import {Subscription} from 'rxjs';
 import {UserRoles} from '../../../../../common/entities/UserDTO';
 import {AuthenticationService} from '../../../model/network/authentication.service';
 import { ClipboardService, ClipboardModule } from 'ngx-clipboard';
 import {ContentLoaderService} from '../contentLoader.service';
-import { NgIf, NgFor, DatePipe } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import { NgIconComponent } from '@ng-icons/core';
 import { FormsModule } from '@angular/forms';
 import { SearchQueryDTO, SearchQueryTypes, TextSearch, TextSearchQueryMatchTypes } from '../../../../../common/entities/SearchQueryDTO';
@@ -23,20 +23,19 @@ import { StringifySearchQuery } from '../../../pipes/StringifySearchQuery';
     templateUrl: './share.gallery.component.html',
     styleUrls: ['./share.gallery.component.css'],
     imports: [
-        NgIf,
-        NgIconComponent,
-        FormsModule,
-        ClipboardModule,
-        NgFor,
-        DatePipe,
-        StringifySearchQuery,
-    ]
+    NgIconComponent,
+    FormsModule,
+    ClipboardModule,
+    DatePipe,
+    StringifySearchQuery
+]
 })
 export class GalleryShareComponent implements OnInit, OnDestroy {
   enabled = true;
   @Input() dropDownItem = false;
   url = '';
   urlValid = false;
+  isSubmitting = false;
   showSharingList = false;
 
   input = {
@@ -79,7 +78,7 @@ export class GalleryShareComponent implements OnInit, OnDestroy {
   }
 
   public get IsAdmin() {
-    return this.authService.user.value.role > UserRoles.Admin;
+    return this.authService.user.value.role >= UserRoles.Admin;
   }
 
   ngOnInit(): void {
@@ -191,6 +190,9 @@ export class GalleryShareComponent implements OnInit, OnDestroy {
   }
 
   async get(): Promise<void> {
+    if (this.isSubmitting) {
+      return;
+    }
     if(Config.Sharing.passwordRequired && !this.input.password){
       this.url = $localize`Set password.`;
       return;
@@ -201,6 +203,7 @@ export class GalleryShareComponent implements OnInit, OnDestroy {
     }
     this.urlValid = false;
     this.url = $localize`loading..`;
+    this.isSubmitting = true;
     try {
       this.sharing = await this.sharingService.createSharingByQuery(
           this.currentQuery,
@@ -218,12 +221,15 @@ export class GalleryShareComponent implements OnInit, OnDestroy {
           (err as any)?.message || err || $localize`Server error`,
           $localize`Sharing error`
       );
+    } finally {
+      this.isSubmitting = false;
     }
   }
 
   async openModal(template: TemplateRef<unknown>): Promise<void> {
     this.url = $localize`Click share to get a link.`;
     this.urlValid = false;
+    this.isSubmitting = false;
     this.sharing = null;
     this.input.password = '';
     if (this.modalRef) {

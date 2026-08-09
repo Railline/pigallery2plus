@@ -81,6 +81,19 @@ export class GalleryManager {
     mediaSortAscending = true
   ): Promise<ParentDirectoryDTO> {
     const pagedMediaRequest = Number.isFinite(mediaLimit) && mediaLimit > 0;
+    const mediaRoot = path.resolve(ProjectPath.ImageFolder);
+    const relativePath = relativeDirectoryName === path.sep || relativeDirectoryName === '/' ?
+      '.' :
+      relativeDirectoryName;
+    const absoluteDirectoryName = path.resolve(mediaRoot, relativePath);
+    const directoryPathFromRoot = path.relative(mediaRoot, absoluteDirectoryName);
+    if (
+      directoryPathFromRoot === '..' ||
+      directoryPathFromRoot.startsWith('..' + path.sep) ||
+      path.isAbsolute(directoryPathFromRoot)
+    ) {
+      return null;
+    }
     const directoryPath = GalleryManager.parseRelativeDirPath(
       relativeDirectoryName
     );
@@ -106,11 +119,7 @@ export class GalleryManager {
         return await this.getParentDirFromId(connection, session, dir.id, mediaOffset, mediaLimit, mediaSortMethod, mediaSortAscending);
       }
 
-      const absoluteDirectoryName = ProjectPath.resolveMediaPath(relativeDirectoryName);
-      if (!absoluteDirectoryName) {
-        return null;
-      }
-      const stat = fs.statSync(absoluteDirectoryName);
+      const stat = await fs.promises.stat(absoluteDirectoryName);
       const lastModified = DiskManager.calcLastModified(stat);
 
       // If it seems that the content did not change, do not work on it
@@ -398,9 +407,7 @@ export class GalleryManager {
       .andWhere('directory.name = :dname AND directory.path = :dpath', {dname: directoryName, dpath: directoryParent})
       .andWhere(session.projectionQuery);
 
-    const count = await qb.getCount();
-
-    return count !== 0;
+    return await qb.getExists();
   }
 
   async authoriseMetaFile(session: SessionContext, p: string) {
@@ -425,9 +432,7 @@ export class GalleryManager {
       })
       .andWhere(session.projectionQuery);
 
-    const count = await qb.getCount();
-
-    return count !== 0;
+    return await qb.getExists();
   }
 
   protected async getDirIdAndTime(connection: Connection, name: string, path: string): Promise<{

@@ -1,5 +1,5 @@
 import {Config} from '../../../../common/config/private/Config';
-import {ColumnOptions} from 'typeorm/decorator/options/ColumnOptions';
+import {ColumnOptions} from 'typeorm';
 import {DatabaseType} from '../../../../common/config/private/PrivateConfig';
 
 export class ColumnCharsetCS implements ColumnOptions {

@@ -149,12 +149,28 @@ export class ContentWrapperUtils {
       return false;
     }
 
-    const fullPath = (d: DirectoryBaseDTO) => d.path + '/' + d.name;
-
-    const d1c = d1.slice().sort((a, b) => fullPath(a).localeCompare(fullPath(b)));
-    const d2c = d2.slice().sort((a, b) => fullPath(a).localeCompare(fullPath(b)));
+    let sameOrder = true;
     for (let i = 0; i < d1.length; ++i) {
-      if (ContentWrapperUtils.equalsPartialDirectory(d1c[i], d2c[i]) === false) {
+      if (!ContentWrapperUtils.equalsPartialDirectory(d1[i], d2[i])) {
+        sameOrder = false;
+        break;
+      }
+    }
+    if (sameOrder) {
+      return true;
+    }
+
+    const fullPath = (d: DirectoryBaseDTO) => d.path + '/' + d.name;
+    const sortByPath = (directories: DirectoryBaseDTO[]) => directories
+      // Preserve both sparse slots and explicit undefined values like slice().sort().
+      .map((directory) => directory === undefined
+        ? undefined
+        : {directory, fullPath: fullPath(directory)})
+      .sort((a, b) => a.fullPath.localeCompare(b.fullPath));
+    const d1c = sortByPath(d1);
+    const d2c = sortByPath(d2);
+    for (let i = 0; i < d1.length; ++i) {
+      if (ContentWrapperUtils.equalsPartialDirectory(d1c[i]?.directory, d2c[i]?.directory) === false) {
         return false;
       }
     }
@@ -173,12 +189,28 @@ export class ContentWrapperUtils {
       return false;
     }
 
+    let sameOrder = true;
+    for (let i = 0; i < m1.length; ++i) {
+      if (!ContentWrapperUtils.equalsMedia(m1[i], m2[i])) {
+        sameOrder = false;
+        break;
+      }
+    }
+    if (sameOrder) {
+      return true;
+    }
+
     const fullPath = (m: FileDTO) => m.directory.path + '/' + m.directory.name + '/' + m.name;
-    const m1c = m1.slice().sort((a, b) => fullPath(a).localeCompare(fullPath(b)));
-    const m2c = m2.slice().sort((a, b) => fullPath(a).localeCompare(fullPath(b)));
+    const sortByPath = (files: FileDTO[]) => files
+      .map((file) => file === undefined
+        ? undefined
+        : {file, fullPath: fullPath(file)})
+      .sort((a, b) => a.fullPath.localeCompare(b.fullPath));
+    const m1c = sortByPath(m1);
+    const m2c = sortByPath(m2);
 
     for (let i = 0; i < m1.length; ++i) {
-      if (!ContentWrapperUtils.equalsMedia(m1c[i], m2c[i])) {
+      if (!ContentWrapperUtils.equalsMedia(m1c[i]?.file, m2c[i]?.file)) {
         return false;
       }
     }
@@ -246,15 +278,49 @@ export class ContentWrapperUtils {
     return cw;
   }
 
+  private static mapifyOne<T>(
+    map: string[],
+    reverseMap: Map<string, number>,
+    obj: T,
+    key: keyof T,
+    mappedKey: string
+  ): void {
+    // @ts-ignore
+    const value: string = obj[key];
+    let index = reverseMap.get(value);
+    if (index === undefined) {
+      index = map.length;
+      reverseMap.set(value, index);
+      map.push(value);
+    }
+    // @ts-ignore
+    obj[mappedKey] = index;
+    delete obj[key];
+  }
+
+  private static deMapifyOne<T>(
+    map: T[],
+    obj: unknown,
+    key: string,
+    mappedKey: string
+  ): void {
+    // @ts-ignore
+    obj[key] = map[obj[mappedKey]];
+    // @ts-ignore
+    delete obj[mappedKey];
+  }
+
   private static mapify(cw: PackedContentWrapper, media: FileDTO, isSearchResult: boolean): void {
     if (isSearchResult) {
       const k = JSON.stringify(media.directory);
-      if (!cw.reverseMap.directories.has(k)) {
-        cw.reverseMap.directories.set(k, cw.map.directories.length);
+      let directoryIndex = cw.reverseMap.directories.get(k);
+      if (directoryIndex === undefined) {
+        directoryIndex = cw.map.directories.length;
+        cw.reverseMap.directories.set(k, directoryIndex);
         cw.map.directories.push(media.directory);
       }
       // @ts-ignore
-      media.d = cw.reverseMap.directories.get(k);
+      media.d = directoryIndex;
       delete media.directory;
     }
 
@@ -313,12 +379,14 @@ export class ContentWrapperUtils {
       if ((media as PhotoDTO).metadata.faces) {
         for (let i = 0; i < (media as PhotoDTO).metadata.faces.length; ++i) {
           const name = (media as PhotoDTO).metadata.faces[i].name;
-          if (!cw.reverseMap.faces.has(name)) {
-            cw.reverseMap.faces.set(name, cw.map.faces.length);
+          let faceIndex = cw.reverseMap.faces.get(name);
+          if (faceIndex === undefined) {
+            faceIndex = cw.map.faces.length;
+            cw.reverseMap.faces.set(name, faceIndex);
             cw.map.faces.push(name);
           }
           // @ts-ignore
-          (media as PhotoDTO).metadata.faces[i] = [...(media as PhotoDTO).metadata.faces[i].b, cw.reverseMap.faces.get(name)];
+          (media as PhotoDTO).metadata.faces[i] = [...(media as PhotoDTO).metadata.faces[i].b, faceIndex];
         }
 
         // @ts-ignore
@@ -329,42 +397,30 @@ export class ContentWrapperUtils {
       if ((media as PhotoDTO).metadata.keywords) {
         for (let i = 0; i < (media as PhotoDTO).metadata.keywords.length; ++i) {
           const k = (media as PhotoDTO).metadata.keywords[i];
-          if (!cw.reverseMap.keywords.has(k)) {
-            cw.reverseMap.keywords.set(k, cw.map.keywords.length);
+          let keywordIndex = cw.reverseMap.keywords.get(k);
+          if (keywordIndex === undefined) {
+            keywordIndex = cw.map.keywords.length;
+            cw.reverseMap.keywords.set(k, keywordIndex);
             cw.map.keywords.push(k);
           }
           // @ts-ignore
-          (media as PhotoDTO).metadata.keywords[i] = cw.reverseMap.keywords.get(k);
+          (media as PhotoDTO).metadata.keywords[i] = keywordIndex;
         }
         // @ts-ignore
         (media as PhotoDTO).metadata['k'] = (media as PhotoDTO).metadata.keywords;
         delete (media as PhotoDTO).metadata.keywords;
       }
-      const mapifyOne = <T>(map: string[], reverseMap: Map<string, number>,
-                            obj: T, key: keyof T, mappedKey: string) => {
-
-        // @ts-ignore
-        const k: string = obj[key];
-
-        if (!reverseMap.has(k)) {
-          reverseMap.set(k, map.length);
-          map.push(k);
-        }
-        // @ts-ignore
-        obj[mappedKey] = reverseMap.get(k);
-        delete obj[key];
-      };
       if ((media as PhotoDTO).metadata.cameraData) {
         if ((media as PhotoDTO).metadata.cameraData.lens) {
-          mapifyOne(cw.map.lens, cw.reverseMap.lens,
+          ContentWrapperUtils.mapifyOne(cw.map.lens, cw.reverseMap.lens,
             (media as PhotoDTO).metadata.cameraData, 'lens', 'l');
         }
         if ((media as PhotoDTO).metadata.cameraData.make) {
-          mapifyOne(cw.map.camera, cw.reverseMap.camera,
+          ContentWrapperUtils.mapifyOne(cw.map.camera, cw.reverseMap.camera,
             (media as PhotoDTO).metadata.cameraData, 'make', 'm');
         }
         if ((media as PhotoDTO).metadata.cameraData.model) {
-          mapifyOne(cw.map.camera, cw.reverseMap.camera,
+          ContentWrapperUtils.mapifyOne(cw.map.camera, cw.reverseMap.camera,
             (media as PhotoDTO).metadata.cameraData, 'model', 'o');
         }
 
@@ -395,15 +451,15 @@ export class ContentWrapperUtils {
       }
       if ((media as PhotoDTO).metadata.positionData) {
         if ((media as PhotoDTO).metadata.positionData.country) {
-          mapifyOne(cw.map.keywords, cw.reverseMap.keywords,
+          ContentWrapperUtils.mapifyOne(cw.map.keywords, cw.reverseMap.keywords,
             (media as PhotoDTO).metadata.positionData, 'country', 'c');
         }
         if ((media as PhotoDTO).metadata.positionData.city) {
-          mapifyOne(cw.map.keywords, cw.reverseMap.keywords,
+          ContentWrapperUtils.mapifyOne(cw.map.keywords, cw.reverseMap.keywords,
             (media as PhotoDTO).metadata.positionData, 'city', 'cy');
         }
         if ((media as PhotoDTO).metadata.positionData.state) {
-          mapifyOne(cw.map.keywords, cw.reverseMap.keywords,
+          ContentWrapperUtils.mapifyOne(cw.map.keywords, cw.reverseMap.keywords,
             (media as PhotoDTO).metadata.positionData, 'state', 's');
         }
 
@@ -445,7 +501,8 @@ export class ContentWrapperUtils {
         }
       }
 
-      if (MediaDTOUtils.isPhoto(m)) {
+      const isVideo = MediaDTOUtils.isVideo(m);
+      if (!isVideo) {
         delete (m as VideoDTO).metadata.bitRate;
         delete (m as VideoDTO).metadata.duration;
 
@@ -459,7 +516,7 @@ export class ContentWrapperUtils {
           }
         }
         ContentWrapperUtils.mapify(cw, m, isSearchResult);
-      } else if (MediaDTOUtils.isVideo(m)) {
+      } else {
         delete (m as PhotoDTO).metadata.caption;
         delete (m as PhotoDTO).metadata.cameraData;
         delete (m as PhotoDTO).metadata.faces;
@@ -516,16 +573,8 @@ export class ContentWrapperUtils {
   }
 
   private static deMapify(cw: PackedContentWrapper, media: FileDTO, isSearchResult: boolean): void {
-
-    const deMapifyOne = <T>(map: any[],
-                            obj: T, key: keyof T, mappedKey: string) => {
-      // @ts-ignore
-      obj[key] = map[obj[mappedKey]];
-      // @ts-ignore
-      delete obj[mappedKey];
-    };
     if (isSearchResult) {
-      deMapifyOne(cw.map.directories, media, 'directory', 'd');
+      ContentWrapperUtils.deMapifyOne(cw.map.directories, media, 'directory', 'd');
     }
 
     // @ts-ignore
@@ -661,17 +710,17 @@ export class ContentWrapperUtils {
 
         // @ts-ignore
         if (typeof (media as PhotoDTO).metadata.cameraData.l !== 'undefined') {
-          deMapifyOne(cw.map.lens,
+          ContentWrapperUtils.deMapifyOne(cw.map.lens,
             (media as PhotoDTO).metadata.cameraData, 'lens', 'l');
         }
         // @ts-ignore
         if (typeof (media as PhotoDTO).metadata.cameraData.m !== 'undefined') {
-          deMapifyOne(cw.map.camera,
+          ContentWrapperUtils.deMapifyOne(cw.map.camera,
             (media as PhotoDTO).metadata.cameraData, 'make', 'm');
         }
         // @ts-ignore
         if (typeof (media as PhotoDTO).metadata.cameraData['o'] !== 'undefined') {
-          deMapifyOne(cw.map.camera,
+          ContentWrapperUtils.deMapifyOne(cw.map.camera,
             (media as PhotoDTO).metadata.cameraData, 'model', 'o');
         }
 
@@ -713,17 +762,17 @@ export class ContentWrapperUtils {
         delete (media as PhotoDTO).metadata.p;
         // @ts-ignore
         if (typeof (media as PhotoDTO).metadata.positionData.c !== 'undefined') {
-          deMapifyOne(cw.map.keywords,
+          ContentWrapperUtils.deMapifyOne(cw.map.keywords,
             (media as PhotoDTO).metadata.positionData, 'country', 'c');
         }
         // @ts-ignore
         if (typeof (media as PhotoDTO).metadata.positionData.cy !== 'undefined') {
-          deMapifyOne(cw.map.keywords,
+          ContentWrapperUtils.deMapifyOne(cw.map.keywords,
             (media as PhotoDTO).metadata.positionData, 'city', 'cy');
         }
         // @ts-ignore
         if (typeof (media as PhotoDTO).metadata.positionData.s !== 'undefined') {
-          deMapifyOne(cw.map.keywords,
+          ContentWrapperUtils.deMapifyOne(cw.map.keywords,
             (media as PhotoDTO).metadata.positionData, 'state', 's');
         }
 
@@ -781,4 +830,3 @@ export class ContentWrapperUtils {
 
   }
 }
-

@@ -4,9 +4,13 @@
     "declaration": true,
     "emitDeclarationOnly": true,
     "sourceMap": false,
-    "outDir": "./lib"
+    "outDir": "./lib",
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true
   },
-  "include": [
-    "./../src/**/*"
+  "files": [
+    "./../src/backend/model/extension/IExtension.ts",
+    "./../src/backend/middlewares/customtypings/ExtendedRequest.d.ts"
   ]
 }

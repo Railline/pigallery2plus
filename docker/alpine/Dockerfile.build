@@ -1,31 +1,20 @@
 #-----------------BUILDER-----------------
 #-----------------------------------------
-FROM node:22-alpine3.23 AS builder
+FROM node:22-alpine3.23@sha256:46825fbbd4e996a78b7a2cdc08d75e38a5a505bdab95dcda55605359bf124bc6 AS builder
 
-ENV SHARP_FORCE_GLOBAL_LIBVIPS=1
-# inspired by https://github.com/lovell/sharp/issues/4273 and https://github.com/lovell/sharp/issues/4267
-RUN apk add --no-cache --update \
-    vips \
-    vips-dev \
-    vips-heif \
-    vips-magick \
-    libheif \
-    libpng \
-    libjpeg-turbo \
-    libde265 \
-    libwebp \
-    libraw-dev \
-    g++ \
-    make \
-    gcc \
-    build-base \
-    python3 \
-    pkgconfig
+# Sharp uses its compatible bundled libvips. Alpine's system libvips is below
+# the minimum supported by this Sharp release.
 
 COPY pigallery2-release /app
 WORKDIR /app
-RUN npm install --no-package-lock --save-dev node-addon-api@8.5.0 node-gyp@11.5.0  && \
-    npm prune --production && \
+ARG NPM_VERSION=12.0.2
+RUN npm install --global --ignore-scripts --no-audit --fund=false "npm@${NPM_VERSION}" && \
+    npm ci --omit=dev --omit=peer --include=optional --strict-allow-scripts --allow-git=none --allow-remote=none && \
+    find /app/node_modules/@img -mindepth 1 -maxdepth 1 -type d \
+      \( -name 'sharp-linux-*' -o -name 'sharp-libvips-linux-*' \) \
+      -exec rm -r -- {} + && \
+    npm audit signatures && \
+    npm audit --omit=dev --audit-level=high && \
     npm cache clean --force
 
 
@@ -37,7 +26,12 @@ RUN mkdir -p /app/data/config && \
 
 #-----------------MAIN--------------------
 #-----------------------------------------
-FROM node:22-alpine3.23 AS main
+FROM node:22-alpine3.23@sha256:46825fbbd4e996a78b7a2cdc08d75e38a5a505bdab95dcda55605359bf124bc6 AS main
+ARG NPM_VERSION=12.0.2
+ARG BRACE_EXPANSION_VERSION=5.0.9
+ARG IP_ADDRESS_VERSION=10.3.1
+ARG TAR_VERSION=7.5.22
+ARG UNDICI_VERSION=6.28.0
 WORKDIR /app
 ENV NODE_ENV=production \
     # overrides only the default value of the settings (the actual value can be overwritten through config.json)
@@ -50,21 +44,43 @@ ENV NODE_ENV=production \
 
 EXPOSE 80
 ARG TARGETARCH
-RUN apk add --no-cache \
-    vips vips-cpp vips-heif vips-magick ffmpeg \
+RUN apk upgrade --no-cache \
+    && apk add --no-cache \
+    ffmpeg \
     && if [ "$TARGETARCH" = "amd64" ]; then \
         echo "Building for amd64, adding intel-media-driver" && \
         apk add --no-cache intel-media-driver; \
     fi \
     && rm -rf /var/cache/apk/*
+# Extension installation needs npm at runtime. Replace the vulnerable npm bundled
+# in the base image and the dependencies that are newer than npm's current pins.
+RUN npm install --global --ignore-scripts --no-audit --fund=false \
+        "npm@${NPM_VERSION}" \
+        "brace-expansion@${BRACE_EXPANSION_VERSION}" \
+        "ip-address@${IP_ADDRESS_VERSION}" \
+        "tar@${TAR_VERSION}" \
+        "undici@${UNDICI_VERSION}" \
+    && rm -r /usr/local/lib/node_modules/npm/node_modules/brace-expansion \
+    && cp -a /usr/local/lib/node_modules/brace-expansion /usr/local/lib/node_modules/npm/node_modules/brace-expansion \
+    && rm -r /usr/local/lib/node_modules/brace-expansion \
+    && rm -r /usr/local/lib/node_modules/npm/node_modules/ip-address \
+    && cp -a /usr/local/lib/node_modules/ip-address /usr/local/lib/node_modules/npm/node_modules/ip-address \
+    && rm -r /usr/local/lib/node_modules/ip-address \
+    && rm -r /usr/local/lib/node_modules/npm/node_modules/tar \
+    && cp -a /usr/local/lib/node_modules/tar /usr/local/lib/node_modules/npm/node_modules/tar \
+    && rm -r /usr/local/lib/node_modules/tar \
+    && rm -r /usr/local/lib/node_modules/npm/node_modules/undici \
+    && cp -a /usr/local/lib/node_modules/undici /usr/local/lib/node_modules/npm/node_modules/undici \
+    && rm -r /usr/local/lib/node_modules/undici \
+    && npm cache clean --force
 COPY --from=builder /app /app
+COPY pigallery2plus-entrypoint.js /usr/local/bin/pigallery2plus-entrypoint.js
 
 # Run build time diagnostics to make sure the app would work after build is finished
 RUN ["node", "--expose-gc", "./src/backend/index", "--run-diagnostics", "--config-path=/app/diagnostics-config.json", "--Server-Log-level=silly"]
 HEALTHCHECK --interval=40s --timeout=30s --retries=3 --start-period=60s \
-  CMD wget --quiet --tries=1 --no-check-certificate --spider \
-  http://127.0.0.1:80/heartbeat || exit 1
+  CMD ["node", "-e", "require('http').get('http://127.0.0.1:80/heartbeat',res=>process.exit(res.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
 
 # after a extensive job (like video converting), pigallery calls gc, to clean up everything as fast as possible
 # Exec form entrypoint is need otherwise (using shell form) ENV variables are not properly passed down to the app
-ENTRYPOINT ["node", "--expose-gc", "./src/backend/index", "--config-path=/app/data/config/config.json"]
+ENTRYPOINT ["node", "/usr/local/bin/pigallery2plus-entrypoint.js"]

@@ -3,6 +3,7 @@ import {ErrorCodes, ErrorDTO} from '../../../common/entities/Error';
 import {ObjectManagers} from '../../model/ObjectManagers';
 import {Utils} from '../../../common/Utils';
 import {Config} from '../../../common/config/private/Config';
+import {AuthenticationMWs} from './AuthenticationMWs';
 
 export class UserMWs {
   public static async createUser(
@@ -49,6 +50,7 @@ export class UserMWs {
       const deleted = await ObjectManagers.getInstance().UserManager.deleteUser(
         parseInt(req.params.id, 10)
       );
+      AuthenticationMWs.invalidateUser(deleted.id);
       // If current session user was deleted, clear the session context
       if (req.session?.context?.user?.id === deleted.id) {
         delete req.session.context;
@@ -81,6 +83,7 @@ export class UserMWs {
         parseInt(req.params.id, 10),
         req.body.newRole
       );
+      AuthenticationMWs.invalidateUser(updatedUser.id);
       // If the current session user was changed, recreate the session context
       if (req.session?.context?.user?.id === updatedUser.id) {
         const newUser: any = Utils.clone(updatedUser);
@@ -122,6 +125,7 @@ export class UserMWs {
         parseInt(req.params.id, 10),
         req.body.settings
       );
+      AuthenticationMWs.invalidateUser(updatedUser.id);
       // If the current session user was changed, recreate the session context
       if (req.session?.context?.user?.id === updatedUser.id) {
         const user = Utils.clone(

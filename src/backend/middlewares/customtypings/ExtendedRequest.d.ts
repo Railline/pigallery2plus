@@ -11,6 +11,9 @@ declare global {
         loginCredential?: LoginCredential;
       };
       locale?: string;
+      // Request-scoped context for public random-share links. It must never be
+      // persisted in the signed client-side session cookie.
+      randomLinkContext?: SessionContext;
       // Stored in the session cookie. Travels to the client side
       session: {
         context?: SessionContext;
@@ -29,5 +32,4 @@ declare global {
 
   }
 }
-
 

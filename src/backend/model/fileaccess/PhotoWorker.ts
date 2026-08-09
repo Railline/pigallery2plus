@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
-import * as sharp from 'sharp';
+import sharpImport = require('sharp');
 import {Metadata, Sharp, SharpOptions} from 'sharp';
 import {Logger} from '../../Logger';
 import {FfmpegCommand, FfprobeData} from 'fluent-ffmpeg';
@@ -7,6 +7,7 @@ import {FFmpegFactory} from '../FFmpegFactory';
 import * as path from 'path';
 import {ExtensionDecorator} from '../extension/ExtensionDecorator';
 
+const sharp = sharpImport as unknown as typeof import('sharp').default;
 
 sharp.cache(false);
 
@@ -144,7 +145,7 @@ export class ImageRendererFactory {
     sharpOptions?: SharpOptions
   ): Promise<Metadata> {
     return sharp(mediaPath, {
-      failOnError: false,
+      failOn: 'none',
       ...(sharpOptions || {}),
       limitInputPixels: ImageRendererFactory.maxInputPixels,
       animated: animate
@@ -214,7 +215,7 @@ export class ImageRendererFactory {
         input.size
       );
       image = sharp((input as MediaRendererInput).mediaPath, {
-        failOnError: false,
+        failOn: 'none',
         ...((input as MediaRendererInput).sharpOptions || {}),
         limitInputPixels: ImageRendererFactory.maxInputPixels,
         animated: (input as MediaRendererInput).animate
@@ -250,7 +251,7 @@ export class ImageRendererFactory {
         fit: 'cover',
       });
     }
-    let processedImg: sharp.Sharp;
+    let processedImg: Sharp;
     if ((input as MediaRendererInput).mediaPath) {
       processedImg = image.webp({
         effort: 6,

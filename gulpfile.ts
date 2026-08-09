@@ -3,9 +3,8 @@ import * as fs from 'fs';
 import {promises as fsp} from 'fs';
 import * as path from 'path';
 import * as util from 'util';
-import * as zip from 'gulp-zip';
+import zip = require('gulp-zip');
 import * as ts from 'gulp-typescript';
-import * as sourcemaps from 'gulp-sourcemaps';
 import * as xml2js from 'xml2js';
 import * as child_process from 'child_process';
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -20,7 +19,7 @@ const execPr = util.promisify(child_process.exec);
 const execFilePr = util.promisify(child_process.execFile);
 
 const translationFolder = 'translate';
-const tsBackendProject = ts.createProject('tsconfig.json');
+const tsBackendProject = ts.createProject('tsconfig.backend.json');
 declare const process: NodeJS.Process;
 
 const translationLanguages = (list: string[]): string => {
@@ -53,9 +52,7 @@ gulp.task('build-backend', (): any =>
     .src(['src/common/**/*.ts', 'src/backend/**/*.ts', 'benchmark/**/*.ts'], {
       base: '.'
     })
-    .pipe(sourcemaps.init())
     .pipe(tsBackendProject())
-    .pipe(sourcemaps.write('.', {includeContent: false}))
     .pipe(gulp.dest('./release'))
 );
 
@@ -210,6 +207,7 @@ gulp.task('copy-package', (): any =>
         (json: {
           devDependencies: { [key: string]: string };
           scripts: { [key: string]: string };
+          allowScripts: { [key: string]: boolean };
           dependencies: { [key: string]: string };
           optionalDependencies: { [key: string]: string };
           buildTime: string;
@@ -217,6 +215,7 @@ gulp.task('copy-package', (): any =>
         }): {
           devDependencies: { [p: string]: string };
           scripts: { [p: string]: string };
+          allowScripts: { [p: string]: boolean };
           dependencies: { [p: string]: string };
           optionalDependencies: { [p: string]: string };
           buildTime: string;
@@ -244,6 +243,17 @@ gulp.task('copy-package', (): any =>
             }
             delete json.optionalDependencies;
           }
+          const runtimeDependencies = {
+            ...json.dependencies,
+            ...(json.optionalDependencies ?? {}),
+          };
+          json.allowScripts = Object.fromEntries(
+            Object.entries(json.allowScripts).filter(([entry]) =>
+              Object.entries(runtimeDependencies).some(
+                ([name, version]) => entry === `${name}@${version}`
+              )
+            )
+          );
           json.buildTime = new Date().toISOString();
 
           try {
@@ -262,6 +272,28 @@ gulp.task('copy-package', (): any =>
     )
     .pipe(gulp.dest('./release'))
 );
+
+gulp.task('create-release-lock', async (): Promise<void> => {
+  await fsp.copyFile(
+    './package-lock.json',
+    './release/package-lock.json'
+  );
+  await execFilePr(
+    process.platform === 'win32' ? 'npm.cmd' : 'npm',
+    [
+      'install',
+      '--package-lock-only',
+      '--omit=dev',
+      '--omit=peer',
+      '--include=optional',
+      '--ignore-scripts',
+      '--offline',
+      '--no-audit',
+      '--no-fund',
+    ],
+    {cwd: './release'}
+  );
+});
 
 gulp.task('zip-release', (): any =>
   gulp
@@ -504,6 +536,7 @@ gulp.task(
     'build-backend',
     'copy-static',
     'copy-package',
+    'create-release-lock',
     'zip-release'
   )
 );

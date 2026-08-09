@@ -31,6 +31,7 @@ interface QueuedUpload {
 export class UploaderService {
   public uploadProgress: UploadProgress[] = [];
   private uploadQueue: QueuedUpload[] = [];
+  private uploadQueueHead = 0;
   private activeUploads = 0;
   private MAX_CONCURRENT_UPLOADS = 1;
   private readonly DEFAULT_MAX_CONCURRENT_UPLOADS = 1;
@@ -93,17 +94,14 @@ export class UploaderService {
     // Track each file individually in the progress list
     const progressItems: UploadProgress[] = [];
     const existingFiles: File[] = [];
+    const existingFileNames = new Set<string>([
+      ...(dirDto.media || []).map((media) => media.name),
+      ...(dirDto.metaFile || []).map((metaFile) => metaFile.name),
+    ]);
 
     for (const f of supportedFiles) {
       // Check if the file already exists in the current directory
-      const dir = this.contentLoaderService.content.value.directory;
-      let fileExists = false;
-      if (dir) {
-        fileExists = (dir.media && dir.media.some(m => m.name === f.name)) ||
-          (dir.metaFile && dir.metaFile.some(m => m.name === f.name));
-      }
-
-      if (fileExists) {
+      if (existingFileNames.has(f.name)) {
         existingFiles.push(f);
       } else {
         const progressItem: UploadProgress = {
@@ -170,7 +168,7 @@ export class UploaderService {
         this.lastUpdateTimestamp = now;
       }
 
-      if (this.activeUploads === 0 && this.uploadQueue.length === 0) {
+      if (this.activeUploads === 0 && this.getQueuedUploadCount() === 0) {
         this.stopSpeedTracking();
       }
     }, 1000);
@@ -184,8 +182,8 @@ export class UploaderService {
   }
 
   private processQueue(): void {
-    while (this.activeUploads < this.MAX_CONCURRENT_UPLOADS && this.uploadQueue.length > 0) {
-      const upload = this.uploadQueue.shift();
+    while (this.activeUploads < this.MAX_CONCURRENT_UPLOADS && this.getQueuedUploadCount() > 0) {
+      const upload = this.takeNextUpload();
       this.activeUploads++;
       this._uploadFile(upload);
     }
@@ -223,7 +221,7 @@ export class UploaderService {
           this.activeUploads--;
           this.processQueue();
 
-          if (this.activeUploads === 0 && this.uploadQueue.length === 0) {
+          if (this.activeUploads === 0 && this.getQueuedUploadCount() === 0) {
             this.notificationService.success($localize`Upload completed.`);
             this.contentLoaderService.reloadCurrentContent().catch(console.error);
             this.MAX_CONCURRENT_UPLOADS = this.DEFAULT_MAX_CONCURRENT_UPLOADS; // Reset for next batch
@@ -240,7 +238,7 @@ export class UploaderService {
         this.activeUploads--;
         this.processQueue();
 
-        if (this.activeUploads === 0 && this.uploadQueue.length === 0) {
+        if (this.activeUploads === 0 && this.getQueuedUploadCount() === 0) {
           this.notificationService.error($localize`Upload failed.`);
           this.MAX_CONCURRENT_UPLOADS = this.DEFAULT_MAX_CONCURRENT_UPLOADS; // Reset for next batch
         }
@@ -264,5 +262,26 @@ export class UploaderService {
         }
       }, 5000);
     });
+  }
+
+  private getQueuedUploadCount(): number {
+    return this.uploadQueue.length - this.uploadQueueHead;
+  }
+
+  private takeNextUpload(): QueuedUpload {
+    const upload = this.uploadQueue[this.uploadQueueHead];
+    // Release the potentially large File as soon as it leaves the queue.
+    this.uploadQueue[this.uploadQueueHead++] = undefined;
+    if (this.uploadQueueHead === this.uploadQueue.length) {
+      this.uploadQueue = [];
+      this.uploadQueueHead = 0;
+    } else if (
+      this.uploadQueueHead >= 1024 &&
+      this.uploadQueueHead * 2 >= this.uploadQueue.length
+    ) {
+      this.uploadQueue = this.uploadQueue.slice(this.uploadQueueHead);
+      this.uploadQueueHead = 0;
+    }
+    return upload;
   }
 }

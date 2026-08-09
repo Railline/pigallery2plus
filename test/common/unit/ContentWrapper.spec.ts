@@ -1,7 +1,7 @@
 import {expect} from 'chai';
 import {ContentWrapper, ContentWrapperUtils} from '../../../src/common/entities/ContentWrapper';
 import {TestHelper} from '../../TestHelper';
-import {DirectoryPathDTO, ParentDirectoryDTO} from '../../../src/common/entities/DirectoryDTO';
+import {DirectoryBaseDTO, DirectoryPathDTO, ParentDirectoryDTO} from '../../../src/common/entities/DirectoryDTO';
 import {SearchResultDTO} from '../../../src/common/entities/SearchResultDTO';
 import {SearchQueryTypes, TextSearch} from '../../../src/common/entities/SearchQueryDTO';
 import {Utils} from '../../../src/common/Utils';
@@ -274,6 +274,42 @@ describe('ContentWrapper', () => {
       const cw2 = ContentWrapperUtils.build(parent2 as ParentDirectoryDTO, null);
 
       expect(ContentWrapperUtils.equals(cw1, cw2)).to.equal(true);
+    });
+
+    it('should preserve order-insensitive equality for sparse arrays', () => {
+      const directoryA = TestHelper.getDirectoryEntry(null, 'a');
+      const directoryB = TestHelper.getDirectoryEntry(null, 'b');
+      const directories1 = new Array<DirectoryBaseDTO>(3);
+      const directories2 = new Array<DirectoryBaseDTO>(3);
+      directories1[0] = directoryA;
+      directories1[2] = directoryB;
+      directories2[0] = Utils.clone(directoryB);
+      directories2[1] = Utils.clone(directoryA);
+
+      expect(ContentWrapperUtils.equalsDirectories(directories1, directories2)).to.equal(true);
+      expect(ContentWrapperUtils.equalsDirectories(
+        [directoryA, undefined],
+        [undefined, Utils.clone(directoryA)]
+      )).to.equal(true);
+
+      const parent1 = TestHelper.getDirectoryEntry();
+      const parent2 = TestHelper.getDirectoryEntry();
+      const photoA = TestHelper.getBasePhotoEntry(parent1, 'a.jpg');
+      const photoB = TestHelper.getBasePhotoEntry(parent1, 'b.jpg');
+      const photoA2 = TestHelper.getBasePhotoEntry(parent2, 'a.jpg');
+      const photoB2 = TestHelper.getBasePhotoEntry(parent2, 'b.jpg');
+      const media1 = new Array<PhotoDTO>(3);
+      const media2 = new Array<PhotoDTO>(3);
+      media1[0] = photoA;
+      media1[2] = photoB;
+      media2[0] = photoB2;
+      media2[1] = photoA2;
+
+      expect(ContentWrapperUtils.equalsFiles(media1, media2)).to.equal(true);
+      expect(ContentWrapperUtils.equalsFiles(
+        [photoA, undefined],
+        [undefined, photoA2]
+      )).to.equal(true);
     });
 
     it('should equal when both directories have no media or metafiles', () => {

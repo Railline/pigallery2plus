@@ -1,23 +1,21 @@
 #-----------------BUILDER-----------------
 #-----------------------------------------
-FROM node:22-trixie AS builder
+FROM node:22-trixie@sha256:8433642fe11d391a7ff1f702352ac1b0ea3e378d3fb2c22de2b292036d79cd2c AS builder
 
-
-ENV SHARP_FORCE_GLOBAL_LIBVIPS=1
-
-# inspired by: https://dev.to/ilyasa1211/converting-heic-image-extension-in-nodejs-with-the-sharp-library-39mg
-# also see: https://github.com/bpatrik/pigallery2/issues/965
-
-# Install build and vips dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends curl python3 git build-essential pkg-config \
-  libvips-dev && \
-  rm -rf /var/lib/apt/lists/*
-
+# Sharp uses its compatible bundled libvips instead of Debian's older system
+# package. The full Node image still provides a native build fallback.
 
 COPY pigallery2-release /app
 WORKDIR /app
-# building sharp based on debian's vips
-RUN npm install --no-package-lock node-addon-api@8.5.0 node-gyp@11.5.0  && \
+ARG NPM_VERSION=12.0.2
+RUN npm install --global --ignore-scripts --no-audit --fund=false "npm@${NPM_VERSION}" && \
+   npm ci --omit=dev --omit=peer --include=optional --strict-allow-scripts --allow-git=none --allow-remote=none && \
+   find /app/node_modules/@img -mindepth 1 -maxdepth 1 -type d \
+     \( -name 'sharp-linuxmusl-*' -o -name 'sharp-libvips-linuxmusl-*' \) \
+     -exec rm -r -- {} + && \
+   npm audit signatures && \
+   npm audit --omit=dev --audit-level=high && \
+   npm cache clean --force && \
    mkdir -p /app/data/config && \
    mkdir -p /app/data/db && \
    mkdir -p /app/data/images && \
@@ -25,7 +23,12 @@ RUN npm install --no-package-lock node-addon-api@8.5.0 node-gyp@11.5.0  && \
 
 #-----------------MAIN--------------------
 #-----------------------------------------
-FROM node:22-trixie-slim AS main
+FROM node:22-trixie-slim@sha256:517aa41d78545cb1b8c67b13655b4c13ede1ee9df1da8aab54cd7434aefbcaf8 AS main
+ARG NPM_VERSION=12.0.2
+ARG BRACE_EXPANSION_VERSION=5.0.9
+ARG IP_ADDRESS_VERSION=10.3.1
+ARG TAR_VERSION=7.5.22
+ARG UNDICI_VERSION=6.28.0
 WORKDIR /app
 ENV NODE_ENV=production \
     # overrides only the default value of the settings (the actualy value can be overwritten through config.json)
@@ -39,21 +42,42 @@ ENV NODE_ENV=production \
 EXPOSE 80
 ARG TARGETARCH
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates wget ffmpeg libvips42 \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends ca-certificates ffmpeg \
     && if [ "$TARGETARCH" = "amd64" ]; then \
         echo "Building for amd64, adding intel-media-va-driver" && \
         apt-get install -y --no-install-recommends intel-media-va-driver; \
     fi \
     && apt-get clean -q -y \
     && rm -rf /var/lib/apt/lists/*
+# Extension installation needs npm at runtime. Replace the vulnerable npm bundled
+# in the base image and the dependencies that are newer than npm's current pins.
+RUN npm install --global --ignore-scripts --no-audit --fund=false \
+        "npm@${NPM_VERSION}" \
+        "brace-expansion@${BRACE_EXPANSION_VERSION}" \
+        "ip-address@${IP_ADDRESS_VERSION}" \
+        "tar@${TAR_VERSION}" \
+        "undici@${UNDICI_VERSION}" \
+    && rm -r /usr/local/lib/node_modules/npm/node_modules/brace-expansion \
+    && cp -a /usr/local/lib/node_modules/brace-expansion /usr/local/lib/node_modules/npm/node_modules/brace-expansion \
+    && rm -r /usr/local/lib/node_modules/brace-expansion \
+    && rm -r /usr/local/lib/node_modules/npm/node_modules/ip-address \
+    && cp -a /usr/local/lib/node_modules/ip-address /usr/local/lib/node_modules/npm/node_modules/ip-address \
+    && rm -r /usr/local/lib/node_modules/ip-address \
+    && rm -r /usr/local/lib/node_modules/npm/node_modules/tar \
+    && cp -a /usr/local/lib/node_modules/tar /usr/local/lib/node_modules/npm/node_modules/tar \
+    && rm -r /usr/local/lib/node_modules/tar \
+    && rm -r /usr/local/lib/node_modules/npm/node_modules/undici \
+    && cp -a /usr/local/lib/node_modules/undici /usr/local/lib/node_modules/npm/node_modules/undici \
+    && rm -r /usr/local/lib/node_modules/undici \
+    && npm cache clean --force
 COPY --from=builder /app /app
 COPY pigallery2plus-entrypoint.js /usr/local/bin/pigallery2plus-entrypoint.js
 
 # Run build time diagnostics to make sure the app would work after build is finished
 RUN ["node", "--expose-gc", "./src/backend/index", "--run-diagnostics", "--config-path=/app/diagnostics-config.json", "--Server-Log-level=silly"]
 HEALTHCHECK --interval=40s --timeout=30s --retries=3 --start-period=60s \
-  CMD wget --quiet --tries=1 --no-check-certificate --spider \
-  http://127.0.0.1:80/heartbeat || exit 1
+  CMD ["node", "-e", "require('http').get('http://127.0.0.1:80/heartbeat',res=>process.exit(res.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
 
 # after a extensive job (like video converting), pigallery calls gc, to clean up everthing as fast as possible
 # Exec form entrypoint is need otherwise (using shell form) ENV variables are not properly passed down to the app

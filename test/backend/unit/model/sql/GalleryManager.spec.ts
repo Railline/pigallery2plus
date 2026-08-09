@@ -171,7 +171,7 @@ describe('GalleryManager', (sqlHelper: DBTestHelper) => {
 
 
   describe('GalleryManager.listDirectory - reindexing severities and projection behavior', () => {
-    const origStatSync = fs.statSync;
+    const originalStat = fs.promises.stat;
 
     let gm: GalleryManagerTest;
     let sessionNoProj: SessionContext;
@@ -191,10 +191,10 @@ describe('GalleryManager', (sqlHelper: DBTestHelper) => {
       // Make projectionQuery truthy without relying on SearchManager
       (sessionProj as any).projectionQuery = {} as any;
 
-      // Stub fs.statSync to control directory mtime/ctime -> lastModified
+      // Stub fs.stat to control directory mtime/ctime -> lastModified
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
-      fs.statSync = ((): any => ({ctime: new Date(0), mtime: new Date(0)})) as any;
+      fs.promises.stat = (async (): Promise<any> => ({ctime: new Date(0), mtime: new Date(0)})) as any;
 
       // Stub getDirIdAndTime and getParentDirFromId to avoid DB
       (gm as any).getDirIdAndTime = () => Promise.resolve(indexed);
@@ -220,14 +220,26 @@ describe('GalleryManager', (sqlHelper: DBTestHelper) => {
     afterEach(() => {
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
-      fs.statSync = origStatSync;
+      fs.promises.stat = originalStat;
     });
 
     const setStatTime = (t: number) => {
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
-      fs.statSync = ((): any => ({ctime: new Date(t), mtime: new Date(t)})) as any;
+      fs.promises.stat = (async (): Promise<any> => ({ctime: new Date(t), mtime: new Date(t)})) as any;
     };
+
+    it('rejects an escaping directory before database or indexing work', async () => {
+      (gm as any).getDirIdAndTime = (): never => {
+        throw new Error('database lookup should not run');
+      };
+
+      expect(await gm.listDirectory(
+        sessionNoProj,
+        path.join('..', 'outside')
+      )).to.equal(null);
+      expect(bgCalls).to.equal(0);
+    });
 
     it('never: returns DB result when already scanned (no projection) and known times are missing', async () => {
       Config.Indexing.reIndexingSensitivity = ReIndexingSensitivity.never;

@@ -147,9 +147,18 @@ export class GallerySortingService {
     }
     switch (sorting.method) {
       case SortByTypes.Name:
+        const sortableNames = new Map<PhotoDTO, string>();
+        const getSortableName = (item: PhotoDTO): string => {
+          let sortableName = sortableNames.get(item);
+          if (sortableName === undefined) {
+            sortableName = Utils.sortableFilename(item.name);
+            sortableNames.set(item, sortableName);
+          }
+          return sortableName;
+        };
         media.sort((a: PhotoDTO, b: PhotoDTO) => {
-            const aSortable = Utils.sortableFilename(a.name);
-            const bSortable = Utils.sortableFilename(b.name);
+            const aSortable = getSortableName(a);
+            const bSortable = getSortableName(b);
 
             if (aSortable === bSortable) {
               // If the trimmed filenames match, use the full name as tie breaker
@@ -164,9 +173,28 @@ export class GallerySortingService {
         );
         break;
       case SortByTypes.Date:
-        media.sort((a: PhotoDTO, b: PhotoDTO): number => {
-          return Utils.getTimeMS(a.metadata.creationDate, a.metadata.creationDateOffset, Config.Gallery.ignoreTimestampOffset) - Utils.getTimeMS(b.metadata.creationDate, b.metadata.creationDateOffset, Config.Gallery.ignoreTimestampOffset);
-        });
+        if (Config.Gallery.ignoreTimestampOffset) {
+          const creationTimes = new Map<PhotoDTO, number>();
+          const getCreationTime = (item: PhotoDTO): number => {
+            let creationTime = creationTimes.get(item);
+            if (creationTime === undefined) {
+              creationTime = Utils.getTimeMS(
+                item.metadata.creationDate,
+                item.metadata.creationDateOffset,
+                true
+              );
+              creationTimes.set(item, creationTime);
+            }
+            return creationTime;
+          };
+          media.sort((a: PhotoDTO, b: PhotoDTO): number => {
+            return getCreationTime(a) - getCreationTime(b);
+          });
+        } else {
+          media.sort((a: PhotoDTO, b: PhotoDTO): number =>
+            a.metadata.creationDate - b.metadata.creationDate
+          );
+        }
         break;
       case SortByTypes.Rating:
         media.sort(

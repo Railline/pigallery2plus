@@ -14,7 +14,7 @@ import {SQLConnection} from '../database/SQLConnection';
 import {ExtensionObject} from './ExtensionObject';
 import {ExtensionDecoratorObject} from './ExtensionDecorator';
 import * as util from 'util';
-import * as AdmZip from 'adm-zip';
+import AdmZip = require('adm-zip');
 import {ServerExtensionsEntryConfig} from '../../../common/config/private/subconfigs/ServerExtensionsConfig';
 import {ExtensionRepository} from './ExtensionRepository';
 import {ExtensionListItem} from '../../../common/entities/extension/ExtensionListItem';
@@ -22,11 +22,14 @@ import {ExtensionConfigTemplateLoader} from './ExtensionConfigTemplateLoader';
 import {Utils} from '../../../common/Utils';
 import {UIExtensionDTO} from '../../../common/entities/extension/IClientUIConfig';
 import {ExtensionConfigWrapper} from './ExtensionConfigWrapper';
+import * as crypto from 'crypto';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const exec = util.promisify(require('child_process').exec);
 const LOG_TAG = '[ExtensionManager]';
 
 export class ExtensionManager implements IObjectManager {
+  private static readonly MAX_ZIP_ENTRIES = 4096;
+  private static readonly MAX_UNCOMPRESSED_ZIP_BYTES = 256 * 1024 * 1024;
   private static safeExtensionName(name: string): string {
     if (!/^[a-zA-Z0-9._-]+$/.test(name || '') || name.includes('..')) {
       throw new Error('Invalid extension name');
@@ -120,34 +123,42 @@ export class ExtensionManager implements IObjectManager {
       throw new Error(`Extension ${extensionId} does not have a zip URL`);
     }
 
-    // Download the zip file
-    const zipFilePath = path.join(ProjectPath.ExtensionFolder, `${extensionId}.zip`);
-    Logger.silly(LOG_TAG, `Downloading extension from ${extension.zipUrl} to ${zipFilePath}`);
-
-    await this.downloadFile(extension.zipUrl, zipFilePath);
-
-    // Create the extension directory
-    const extensionDir = path.join(ProjectPath.ExtensionFolder, extensionId);
-    if (!fs.existsSync(extensionDir)) {
-      await fs.promises.mkdir(extensionDir, {recursive: true});
+    const extensionDir = ExtensionManager.ensureInside(
+      ProjectPath.ExtensionFolder,
+      path.join(ProjectPath.ExtensionFolder, extensionId)
+    );
+    if (fs.existsSync(extensionDir)) {
+      throw new Error(`Extension ${extensionId} is already installed`);
     }
 
-    // Unzip the file
-    Logger.silly(LOG_TAG, `Unzipping extension to ${extensionDir}`);
-    await this.unzipFile(zipFilePath, extensionDir);
+    await fs.promises.mkdir(ProjectPath.ExtensionFolder, {recursive: true});
+    const installId = crypto.randomUUID();
+    const zipFilePath = ExtensionManager.ensureInside(
+      ProjectPath.ExtensionFolder,
+      path.join(ProjectPath.ExtensionFolder, `.${extensionId}-${installId}.zip`)
+    );
+    const stagingDir = ExtensionManager.ensureInside(
+      ProjectPath.ExtensionFolder,
+      path.join(ProjectPath.ExtensionFolder, `.${extensionId}-${installId}.install`)
+    );
+    Logger.silly(LOG_TAG, `Downloading extension from ${extension.zipUrl} to ${zipFilePath}`);
 
-    // Update the configuration
-    Logger.silly(LOG_TAG, `Updating configuration for extension ${extensionId}`);
+    try {
+      await this.downloadFile(extension.zipUrl, zipFilePath);
+      await fs.promises.mkdir(stagingDir, {recursive: true});
 
-    ExtensionConfigTemplateLoader.Instance.loadSingleExtension(extensionId, Config);
+      Logger.silly(LOG_TAG, `Unzipping extension to staging directory`);
+      await this.unzipFile(zipFilePath, stagingDir);
+      await fs.promises.rename(stagingDir, extensionDir);
 
-    // Initialize the extension
-    Logger.silly(LOG_TAG, `Initializing extension ${extensionId}`);
-    await this.initSingleExtension(extensionId);
+      Logger.silly(LOG_TAG, `Updating configuration for extension ${extensionId}`);
+      ExtensionConfigTemplateLoader.Instance.loadSingleExtension(extensionId, Config);
 
-    // Clean up the temporary file
-    if (fs.existsSync(zipFilePath)) {
-      fs.unlinkSync(zipFilePath);
+      Logger.silly(LOG_TAG, `Initializing extension ${extensionId}`);
+      await this.initSingleExtension(extensionId);
+    } finally {
+      await fs.promises.rm(zipFilePath, {force: true}).catch((): void => undefined);
+      await fs.promises.rm(stagingDir, {recursive: true, force: true}).catch((): void => undefined);
     }
 
     Logger.debug(LOG_TAG, `Extension ${extensionId} installed successfully`);
@@ -360,7 +371,11 @@ export class ExtensionManager implements IObjectManager {
       return;
     }
 
-    const serverExt = path.join(extObj.folder, 'server.js');
+    const safeFolder = ExtensionManager.safeExtensionName(extObj.folder);
+    const serverExt = ExtensionManager.ensureInside(
+      ProjectPath.ExtensionFolder,
+      path.join(ProjectPath.ExtensionFolder, safeFolder, 'server.js')
+    );
     if (fs.existsSync(serverExt)) {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const ext = require(serverExt);
@@ -390,10 +405,20 @@ export class ExtensionManager implements IObjectManager {
     outputPath = ExtensionManager.ensureInside(ProjectPath.ExtensionFolder, outputPath);
     const maxBytes = 50 * 1024 * 1024;
     let downloadedBytes = 0;
-    const response = await fetch(parsedUrl);
+    const response = await fetch(parsedUrl, {
+      redirect: 'follow',
+      signal: AbortSignal.timeout(30000),
+    });
 
     if (!response.ok || !response.body) {
-      throw new Error(`Unexpected response ${response.statusText}`);
+      throw new Error(`Unexpected extension download response: HTTP ${response.status}`);
+    }
+    if (new URL(response.url).protocol !== 'https:') {
+      throw new Error('Extension download redirected to an insecure URL');
+    }
+    const advertisedSize = Number(response.headers.get('content-length') || 0);
+    if (advertisedSize > maxBytes) {
+      throw new Error('Extension download is too large');
     }
 
     const nodeReadable = Readable.fromWeb(response.body as any);
@@ -409,7 +434,7 @@ export class ExtensionManager implements IObjectManager {
     });
 
     try {
-      await pipeline(nodeReadable, sizeLimiter, fs.createWriteStream(outputPath));
+      await pipeline(nodeReadable, sizeLimiter, fs.createWriteStream(outputPath, {flags: 'wx', mode: 0o600}));
     } catch (e) {
       if (fs.existsSync(outputPath)) {
         fs.unlinkSync(outputPath);
@@ -419,19 +444,45 @@ export class ExtensionManager implements IObjectManager {
   }
 
   private async unzipFile(zipFilePath: string, outputPath: string): Promise<void> {
+    let tempExtractPath: string = null;
     try {
       // Extract to temp first
       outputPath = ExtensionManager.ensureInside(ProjectPath.ExtensionFolder, outputPath);
-      const tempExtractPath = ExtensionManager.ensureInside(outputPath, path.join(outputPath, '__temp_unzip'));
+      await fs.promises.mkdir(outputPath, {recursive: true});
+      tempExtractPath = ExtensionManager.ensureInside(outputPath, path.join(outputPath, '__temp_unzip'));
 
       const zip = new AdmZip(zipFilePath);
-      for (const entry of zip.getEntries()) {
-        const entryPath = ExtensionManager.ensureInside(tempExtractPath, path.join(tempExtractPath, entry.entryName));
-        if (entryPath.includes(path.sep + '..' + path.sep)) {
+      const zipEntries = zip.getEntries();
+      if (zipEntries.length > ExtensionManager.MAX_ZIP_ENTRIES) {
+        throw new Error('Extension archive contains too many entries');
+      }
+      let totalSize = 0;
+      for (const entry of zipEntries) {
+        const normalizedName = entry.entryName.replace(/\\/g, '/');
+        if (
+          normalizedName.includes('\0') ||
+          normalizedName.startsWith('/') ||
+          normalizedName.split('/').includes('..')
+        ) {
           throw new Error('Invalid zip entry path');
         }
+        ExtensionManager.ensureInside(tempExtractPath, path.join(tempExtractPath, normalizedName));
+        if (entry.header.encrypted) {
+          throw new Error('Encrypted extension archives are not supported');
+        }
+        const unixType = (entry.attr >>> 16) & 0o170000;
+        if (unixType === 0o120000) {
+          throw new Error('Symbolic links are not allowed in extension archives');
+        }
+        if (!Number.isSafeInteger(entry.header.size) || entry.header.size < 0) {
+          throw new Error('Invalid extension archive entry size');
+        }
+        totalSize += entry.header.size;
+        if (totalSize > ExtensionManager.MAX_UNCOMPRESSED_ZIP_BYTES) {
+          throw new Error('Extension archive is too large after extraction');
+        }
       }
-      zip.extractAllTo(tempExtractPath, true);
+      zip.extractAllTo(tempExtractPath, false);
 
       // Flatten directory
       // Check for single subdirectory
@@ -450,15 +501,9 @@ export class ExtensionManager implements IObjectManager {
             fs.renameSync(src, dest);
           });
 
-          // Remove the temp and wrapper folder
-          fs.rmSync(tempExtractPath, {recursive: true, force: true});
-
-          console.log('Flattened and extracted successfully.');
         } else {
           // It's not a folder, just move it directly
           fs.renameSync(singleDirPath, path.join(outputPath, entries[0]));
-          fs.rmSync(tempExtractPath, {recursive: true, force: true});
-          console.log('Moved single file directly.');
         }
       } else {
         // Multiple entries, just move all
@@ -467,13 +512,14 @@ export class ExtensionManager implements IObjectManager {
           const dest = path.join(outputPath, entry);
           fs.renameSync(src, dest);
         });
-
-        fs.rmSync(tempExtractPath, {recursive: true, force: true});
-        console.log('Extracted with multiple top-level items.');
       }
     } catch (error) {
       Logger.error(LOG_TAG, `Error unzipping file: ${error}`);
       throw new Error(`Failed to unzip file: ${error}`);
+    } finally {
+      if (tempExtractPath) {
+        await fs.promises.rm(tempExtractPath, {recursive: true, force: true}).catch((): void => undefined);
+      }
     }
   }
 }

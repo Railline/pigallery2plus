@@ -3,7 +3,7 @@ import {ContentWrapper} from '../../../../../common/entities/ContentWrapper';
 import {Config} from '../../../../../common/config/public/Config';
 import {NotificationService} from '../../../model/notification.service';
 import {BsModalService} from 'ngx-bootstrap/modal';
-import {BsModalRef} from 'ngx-bootstrap/modal/bs-modal-ref.service';
+import {BsModalRef} from 'ngx-bootstrap/modal';
 import {NetworkService} from '../../../model/network/network.service';
 import {Subscription} from 'rxjs';
 import {
@@ -25,17 +25,18 @@ import {ShareService} from '../share.service';
 import {Utils} from '../../../../../common/Utils';
 import {SharingsListComponent} from '../../settings/sharings-list/sharings-list.component';
 
+
 @Component({
     selector: 'app-gallery-random-query-builder',
     templateUrl: './random-query-builder.gallery.component.html',
     styleUrls: ['./random-query-builder.gallery.component.css'],
     imports: [
-        NgIconComponent,
-        FormsModule,
-        ClipboardModule,
-        GallerySearchQueryBuilderComponent,
-        SharingsListComponent,
-    ]
+    NgIconComponent,
+    FormsModule,
+    ClipboardModule,
+    GallerySearchQueryBuilderComponent,
+    SharingsListComponent
+]
 })
 export class RandomQueryBuilderGalleryComponent implements OnInit, OnDestroy {
   public searchQueryDTO: SearchQueryDTO = {
@@ -44,6 +45,7 @@ export class RandomQueryBuilderGalleryComponent implements OnInit, OnDestroy {
   } as TextSearch;
   enabled = true;
   url = '';
+  urlError = '';
   private currentDirectoryQuery: SearchQueryDTO = null;
   private readonly randomShareKeys = new Map<string, string>();
   private urlGenerationSeq = 0;
@@ -86,11 +88,25 @@ export class RandomQueryBuilderGalleryComponent implements OnInit, OnDestroy {
 
   private async updateRandomUrl(includeSharingKey = false): Promise<void> {
     const seq = ++this.urlGenerationSeq;
+    this.urlError = '';
     const query = this.getRandomSearchQuery();
     const htmlSearchQuery = SearchQueryUtils.urlify(query);
     let url = Config.Server.publicUrl + Config.Server.apiPath + '/gallery/random/' + encodeURIComponent(htmlSearchQuery);
     if (includeSharingKey) {
-      const sharingKey = await this.getSharingKeyForRandomQuery(query, htmlSearchQuery);
+      this.url = $localize`loading..`;
+      let sharingKey: string;
+      try {
+        sharingKey = await this.getSharingKeyForRandomQuery(query, htmlSearchQuery);
+        if (!sharingKey && Config.Users.authenticationRequired) {
+          throw new Error($localize`A public random link cannot be created with the current sharing settings.`);
+        }
+      } catch (e) {
+        if (seq === this.urlGenerationSeq) {
+          this.url = '';
+          this.urlError = (e as Error)?.message || e as string;
+        }
+        return;
+      }
       if (seq !== this.urlGenerationSeq) {
         return;
       }
@@ -104,6 +120,14 @@ export class RandomQueryBuilderGalleryComponent implements OnInit, OnDestroy {
   private async getSharingKeyForRandomQuery(query: SearchQueryDTO, key: string): Promise<string> {
     const currentSharingKey = this.shareService.getSharingKey();
     if (currentSharingKey) {
+      const currentSharing = this.shareService.sharingSubject.value;
+      if (
+        Config.Sharing.passwordRequired ||
+        currentSharing?.sharingKey !== currentSharingKey ||
+        currentSharing.passwordProtected !== false
+      ) {
+        throw new Error($localize`Password-protected shares cannot be used as public random links.`);
+      }
       return currentSharingKey;
     }
     if (!Config.Sharing.enabled || Config.Sharing.passwordRequired) {
@@ -123,8 +147,7 @@ export class RandomQueryBuilderGalleryComponent implements OnInit, OnDestroy {
       this.randomShareKeys.set(key, sharingKey);
       return sharingKey;
     } catch (e) {
-      console.error(e);
-      return null;
+      throw new Error((e as Error)?.message || $localize`Could not create a public random link.`);
     }
   }
 
@@ -175,6 +198,8 @@ export class RandomQueryBuilderGalleryComponent implements OnInit, OnDestroy {
 
     this.modalRef = this.modalService.show(template, {class: 'modal-lg'});
     document.body.style.paddingRight = '0px';
+    this.url = '';
+    this.urlError = '';
     this.updateRandomUrl(true).catch(console.error);
     return false;
   }

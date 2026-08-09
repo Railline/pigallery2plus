@@ -1,6 +1,7 @@
 import {Express, NextFunction, Request, Response} from 'express';
 import {LoggerFunction, Logger} from '../Logger';
 import {Config} from '../../common/config/private/Config';
+import {ActivityAuditMWs} from '../middlewares/ActivityAuditMWs';
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -27,7 +28,7 @@ export class LoggerRouter {
       res.end(a, b, c);
       loggerFn(
           req.method,
-          req.url,
+          ActivityAuditMWs.redactUrl(req.url),
           res.statusCode,
           Date.now() - req._startTime + 'ms'
       );

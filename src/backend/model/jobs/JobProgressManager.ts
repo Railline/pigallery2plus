@@ -9,6 +9,8 @@ export class JobProgressManager {
   private db: JobProgressDB = JobProgressManager.createEmptyDB();
   private readonly dbPath: string;
   private timer: NodeJS.Timeout = null;
+  private saveInFlight: Promise<void> = null;
+  private saveRequested = false;
 
   constructor() {
     this.dbPath = path.join(ProjectPath.DBFolder, 'jobs.db');
@@ -38,6 +40,22 @@ export class JobProgressManager {
   onJobProgressUpdate(progress: JobProgressDTO): void {
     this.db.progresses[progress.HashName] = {progress, timestamp: Date.now()};
     this.delayedSave();
+  }
+
+  public async cleanUp(): Promise<void> {
+    if (this.timer !== null) {
+      clearTimeout(this.timer);
+      this.timer = null;
+      this.saveRequested = true;
+    }
+
+    if (this.saveRequested) {
+      this.queueSave();
+    }
+
+    while (this.saveInFlight) {
+      await this.saveInFlight;
+    }
   }
 
   private async loadDB(): Promise<void> {
@@ -102,17 +120,43 @@ export class JobProgressManager {
   }
 
   private async saveDB(): Promise<void> {
-    await fsp.writeFile(this.dbPath, JSON.stringify(this.db));
+    const data = JSON.stringify(this.db);
+    const temporaryPath = this.dbPath + '.tmp';
+    await fsp.writeFile(temporaryPath, data);
+    await fsp.rename(temporaryPath, this.dbPath);
   }
 
   private delayedSave(): void {
     if (this.timer !== null) {
       return;
     }
-    this.timer = setTimeout(async (): Promise<void> => {
-      this.saveDB().catch(console.error);
+    this.timer = setTimeout((): void => {
       this.timer = null;
+      this.queueSave();
     }, 1000);
+  }
+
+  private queueSave(): void {
+    this.saveRequested = true;
+    if (this.saveInFlight) {
+      return;
+    }
+
+    this.saveInFlight = this.flushSaves()
+      .catch(console.error)
+      .finally((): void => {
+        this.saveInFlight = null;
+        if (this.saveRequested) {
+          this.queueSave();
+        }
+      });
+  }
+
+  private async flushSaves(): Promise<void> {
+    while (this.saveRequested) {
+      this.saveRequested = false;
+      await this.saveDB();
+    }
   }
 }
 

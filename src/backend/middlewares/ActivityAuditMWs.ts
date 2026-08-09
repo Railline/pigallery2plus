@@ -119,7 +119,7 @@ export class ActivityAuditMWs {
         durationMs: Date.now() - start,
         user: ActivityAuditMWs.userFor(req),
         ip: req.ip,
-        userAgent: req.get('user-agent') || '',
+        userAgent: (req.get('user-agent') || '').slice(0, 512),
         referer: ActivityAuditMWs.redactUrl(req.get('referer') || ''),
         loginUser: ActivityAuditMWs.loginUserFor(req),
       });
@@ -190,7 +190,7 @@ export class ActivityAuditMWs {
     return typeof username === 'string' ? username.slice(0, 160) : undefined;
   }
 
-  private static redactUrl(value: string): string {
+  public static redactUrl(value: string): string {
     if (!value) {
       return '';
     }
@@ -202,11 +202,22 @@ export class ActivityAuditMWs {
           parsed.searchParams.set(key, '[redacted]');
         }
       }
+      parsed.pathname = ActivityAuditMWs.redactSensitivePath(parsed.pathname);
       const url = parsed.pathname + parsed.search + parsed.hash;
       return url.slice(0, 4096);
     } catch {
-      return value.replace(/([?&](?:sk|sharingKey|password|token|access_token|refresh_token|code)=)[^&\s]+/gi, '$1[redacted]').slice(0, 4096);
+      return ActivityAuditMWs.redactSensitivePath(
+        value.replace(/([?&](?:sk|sharingKey|password|token|access_token|refresh_token|code)=)[^&\s]+/gi, '$1[redacted]')
+      ).slice(0, 4096);
     }
+  }
+
+  private static redactSensitivePath(value: string): string {
+    return value
+      .replace(/(\/gallery\/random-link\/)[^/?#]+/gi, '$1[redacted]')
+      .replace(/(\/gallery\/mail-(?:view|media)\/[^/?#]+\/)[^/?#]+/gi, '$1[redacted]')
+      .replace(/(\/gallery\/mail-thumbnail\/[^/?#]+\/[^/?#]+\/)[^/?#]+/gi, '$1[redacted]')
+      .replace(/(\/share\/)(?!list(?:All|Mine)?(?:\/|$|\?))[^/?#]+/gi, '$1[redacted]');
   }
 
   private static write(entry: Record<string, unknown>): void {

@@ -23,6 +23,7 @@ import {NotificationManager} from '../NotifocationManager';
 const LOG_TAG = '[ProjectedCacheManager]';
 
 export class ProjectedCacheManager implements IObjectManager {
+  private readonly directoryCacheWrites = new Map<string, Promise<ProjectedDirectoryCacheEntity>>();
 
   async init(): Promise<void> {
     // Cleanup at startup to avoid stale growth
@@ -187,9 +188,25 @@ export class ProjectedCacheManager implements IObjectManager {
     name: string,
     path: string
   }): Promise<ProjectedDirectoryCacheEntity> {
-    const cacheRepo = connection.getRepository(ProjectedDirectoryCacheEntity);
-    const row = await this.getCacheForDirectory(connection, session, dir);
-    const ret = await cacheRepo.save(row);
+    const cacheKey = `${session?.user?.projectionKey || ''}:${dir.id}`;
+    let write = this.directoryCacheWrites.get(cacheKey);
+    if (!write) {
+      write = (async (): Promise<ProjectedDirectoryCacheEntity> => {
+        const cacheRepo = connection.getRepository(ProjectedDirectoryCacheEntity);
+        const row = await this.getCacheForDirectory(connection, session, dir);
+        return cacheRepo.save(row);
+      })();
+      this.directoryCacheWrites.set(cacheKey, write);
+    }
+
+    let ret: ProjectedDirectoryCacheEntity;
+    try {
+      ret = await write;
+    } finally {
+      if (this.directoryCacheWrites.get(cacheKey) === write) {
+        this.directoryCacheWrites.delete(cacheKey);
+      }
+    }
     // we would not select these either
     delete ret.projectionKey;
     delete ret.directory;

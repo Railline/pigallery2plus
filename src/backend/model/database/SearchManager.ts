@@ -37,11 +37,16 @@ import {DiskManager} from '../fileaccess/DiskManager';
 import {SQLSorting} from './SQLSorting';
 
 export class SearchManager {
+  private static readonly RANDOM_ID_CACHE_TTL = 5 * 60 * 1000;
   private DIRECTORY_SELECT = [
     'directory.id',
     'directory.name',
     'directory.path',
   ];
+  private readonly randomMaxIdCache = new Map<boolean, {
+    maxId: number;
+    expires: number;
+  }>();
   // makes all search query params unique, so typeorm won't mix them
   private queryIdBase = 0;
 
@@ -543,23 +548,74 @@ export class SearchManager {
   }
 
   public async getRandomMediaPaths(session: SessionContext, query: SearchQueryDTO, take: number, photoOnly = true): Promise<string[]> {
-    const connection = await SQLConnection.getConnection();
-    const sqlQuery: SelectQueryBuilder<PhotoEntity> = connection
-      .getRepository(photoOnly ? PhotoEntity : MediaEntity)
-      .createQueryBuilder('media')
-      .select(['media.name', ...this.DIRECTORY_SELECT])
-      .innerJoin('media.directory', 'directory')
-      .where(await this.prepareAndBuildWhereQuery(query));
-
-    if (session.projectionQuery) {
-      sqlQuery.andWhere(session.projectionQuery);
+    const boundedTake = Number.isFinite(take)
+      ? Math.max(0, Math.floor(take))
+      : 0;
+    if (boundedTake === 0) {
+      return [];
     }
 
-    sqlQuery
-      .orderBy(Config.Database.type === DatabaseType.mysql ? 'RAND()' : 'RANDOM()')
-      .limit(take);
+    const connection = await SQLConnection.getConnection();
+    const repository = connection.getRepository(photoOnly ? PhotoEntity : MediaEntity);
+    const now = Date.now();
+    let idCache = this.randomMaxIdCache.get(photoOnly);
 
-    const media = await sqlQuery.getMany();
+    if (!idCache || idCache.expires <= now) {
+      const rawMax = await repository
+        .createQueryBuilder('media')
+        .select('MAX(media.id)', 'maxId')
+        .getRawOne<{maxId: number | string | null}>();
+      idCache = {
+        maxId: Math.max(0, Number(rawMax?.maxId) || 0),
+        expires: now + (Number(rawMax?.maxId) > 0 ? SearchManager.RANDOM_ID_CACHE_TTL : 0),
+      };
+      this.randomMaxIdCache.set(photoOnly, idCache);
+    }
+
+    if (idCache.maxId === 0) {
+      return [];
+    }
+
+    // ORDER BY RAND()/RANDOM() evaluates and sorts every matching row. On a
+    // large gallery this can take seconds. Pick a random primary-key pivot and
+    // read a bounded, indexed page instead, wrapping once at the end.
+    const pivot = Math.floor(Math.random() * idCache.maxId) + 1;
+    const ascending = Math.random() >= 0.5;
+    const loadPage = async (wrap: boolean, limit: number): Promise<PhotoEntity[]> => {
+      if (limit <= 0) {
+        return [];
+      }
+      const sqlQuery: SelectQueryBuilder<PhotoEntity> = repository
+        .createQueryBuilder('media')
+        .select(['media.id', 'media.name', ...this.DIRECTORY_SELECT])
+        .innerJoin('media.directory', 'directory')
+        .where(await this.prepareAndBuildWhereQuery(query));
+
+      if (session.projectionQuery) {
+        sqlQuery.andWhere(session.projectionQuery);
+      }
+
+      if (ascending) {
+        sqlQuery.andWhere(wrap ? 'media.id < :randomPivot' : 'media.id >= :randomPivot', {
+          randomPivot: pivot,
+        });
+      } else {
+        sqlQuery.andWhere(wrap ? 'media.id > :randomPivot' : 'media.id <= :randomPivot', {
+          randomPivot: pivot,
+        });
+      }
+
+      return sqlQuery
+        .orderBy('media.id', ascending ? 'ASC' : 'DESC')
+        .limit(limit)
+        .getMany();
+    };
+
+    const media = await loadPage(false, boundedTake);
+    if (media.length < boundedTake) {
+      media.push(...await loadPage(true, boundedTake - media.length));
+    }
+
     return media.map((m) => Utils.concatUrls(
       (m.directory as unknown as { path: string, name: string }).path,
       (m.directory as unknown as { path: string, name: string }).name,

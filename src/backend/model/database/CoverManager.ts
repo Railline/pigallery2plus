@@ -1,5 +1,5 @@
 import {Config} from '../../../common/config/private/Config';
-import {Brackets, SelectQueryBuilder, WhereExpression} from 'typeorm';
+import {Brackets, SelectQueryBuilder} from 'typeorm';
 import {MediaEntity} from './enitites/MediaEntity';
 import {DiskManager} from '../fileaccess/DiskManager';
 import {ObjectManagers} from '../ObjectManagers';
@@ -122,42 +122,49 @@ export class CoverManager {
       path: string;
     }) {
     const connection = await SQLConnection.getConnection();
-    const coverQuery = (): SelectQueryBuilder<MediaEntity> => {
+    const coverQuery = (
+      scope: 'direct' | 'descendant'
+    ): SelectQueryBuilder<MediaEntity> => {
       const query = connection
         .getRepository(MediaEntity)
         .createQueryBuilder('media')
         .innerJoin('media.directory', 'directory')
-        .select(['media.name', 'media.id', ...CoverManager.DIRECTORY_SELECT])
-        .where(
-          new Brackets((q: WhereExpression) => {
-            q.where('media.directory = :dir', {
-              dir: dir.id,
-            });
-            if (Config.Database.type === DatabaseType.mysql) {
-              q.orWhere('directory.path like :path || \'%\'', {
-                path: DiskManager.pathFromParent(dir),
-              });
-            } else {
-              q.orWhere('directory.path GLOB :path', {
-                path: DiskManager.pathFromParent(dir)
-                  // glob escaping. see https://github.com/bpatrik/pigallery2/issues/621
-                  .replaceAll('[', '[[]') + '*',
-              });
-            }
-          })
-        );
-      // Select from the directory if any otherwise from any subdirectories.
-      // (There is no priority between subdirectories)
-      query.orderBy(
-        `CASE WHEN directory.id = ${dir.id} THEN 0 ELSE 1 END`,
-        'ASC'
-      );
+        .select(['media.name', 'media.id', ...CoverManager.DIRECTORY_SELECT]);
+      if (scope === 'direct') {
+        query.where('media.directory = :dir', {dir: dir.id});
+      } else if (Config.Database.type === DatabaseType.mysql) {
+        query.where('directory.path LIKE :path', {
+          path: DiskManager.pathFromParent(dir) + '%',
+        });
+      } else {
+        query.where('directory.path GLOB :path', {
+          path: DiskManager.pathFromParent(dir)
+            // glob escaping. see https://github.com/bpatrik/pigallery2/issues/621
+            .replaceAll('[', '[[]') + '*',
+        });
+      }
       if (session.projectionQuery) {
         query.andWhere(session.projectionQuery);
       }
 
       SearchManager.setSorting(query, Config.AlbumCover.Sorting);
       return query;
+    };
+
+    const getPrioritizedCover = async (
+      filter?: Brackets
+    ): Promise<CoverPhotoDTOWithID> => {
+      for (const scope of ['direct', 'descendant'] as const) {
+        const query = coverQuery(scope);
+        if (filter) {
+          query.andWhere(filter);
+        }
+        const media = await query.limit(1).getOne();
+        if (media) {
+          return media;
+        }
+      }
+      return null;
     };
 
     let coverMedia: CoverPhotoDTOWithID = null;
@@ -168,16 +175,13 @@ export class CoverManager {
         value: '',
       } as TextSearch)
     ) {
-      coverMedia = await coverQuery()
-        .andWhere(
-          await ObjectManagers.getInstance().SearchManager.prepareAndBuildWhereQuery(Config.AlbumCover.SearchQuery)
-        )
-        .limit(1)
-        .getOne();
+      coverMedia = await getPrioritizedCover(
+        await ObjectManagers.getInstance().SearchManager.prepareAndBuildWhereQuery(Config.AlbumCover.SearchQuery)
+      );
     }
 
     if (!coverMedia) {
-      coverMedia = await coverQuery().limit(1).getOne();
+      coverMedia = await getPrioritizedCover();
     }
     return coverMedia;
   }

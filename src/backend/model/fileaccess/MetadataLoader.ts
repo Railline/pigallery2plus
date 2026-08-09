@@ -8,8 +8,7 @@ import {Logger} from '../../Logger';
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
 import * as exifr from 'exifr';
-import * as exifReader from 'exif-reader';
-import * as sharp from 'sharp';
+import ExifReader = require('exifreader');
 import {FfprobeData} from 'fluent-ffmpeg';
 import * as util from 'node:util';
 import * as path from 'path';
@@ -17,12 +16,11 @@ import {Utils} from '../../../common/Utils';
 import {FFmpegFactory} from '../FFmpegFactory';
 import {ExtensionDecorator} from '../extension/ExtensionDecorator';
 import {DateTags} from './MetadataCreationDate';
+import {ImageRendererFactory} from './PhotoWorker';
+import type {SharpOptions} from 'sharp';
 
-const {imageSizeFromFile} = require('image-size/fromFile');
 const LOG_TAG = '[MetadataLoader]';
 const ffmpeg = FFmpegFactory.get();
-
-sharp.cache(false);
 
 export class MetadataLoader {
 
@@ -47,7 +45,7 @@ export class MetadataLoader {
     };
 
     try {
-      const stat = fs.statSync(fullPath);
+      const stat = await fs.promises.stat(fullPath);
       metadata.fileSize = stat.size;
       metadata.creationDate = stat.mtime.getTime(); //Default date is file system time of last modification
     } catch (err) {
@@ -159,12 +157,15 @@ export class MetadataLoader {
         ];
 
         for (const sidecarPath of sidecarPaths) {
-          if (fs.existsSync(sidecarPath)) {
-            const sidecarData: any = await exifr.sidecar(sidecarPath);
-            if (sidecarData !== undefined) {
-              // sidecar should not change the video dimension
-              MetadataLoader.mapMetadata(metadata, sidecarData, false);
-            }
+          try {
+            await fs.promises.access(sidecarPath);
+          } catch (error) {
+            continue;
+          }
+          const sidecarData: any = await exifr.sidecar(sidecarPath);
+          if (sidecarData !== undefined) {
+            // sidecar should not change the video dimension
+            MetadataLoader.mapMetadata(metadata, sidecarData, false);
           }
         }
       } catch (err) {
@@ -203,7 +204,7 @@ export class MetadataLoader {
     };
     try {
       try {
-        const stat = fs.statSync(fullPath);
+        const stat = await fs.promises.stat(fullPath);
         metadata.fileSize = stat.size;
         metadata.creationDate = stat.mtime.getTime();
       } catch (err) {
@@ -211,7 +212,7 @@ export class MetadataLoader {
       }
       try {
         //read the actual image size, don't rely on tags for this
-        const info = await imageSizeFromFile(fullPath);
+        const info = await MetadataLoader.readPhotoDimensions(fullPath);
         metadata.size = {width: info.width, height: info.height};
       } catch (e) {
         //in case of failure, set dimensions to 0 so they may be read via tags
@@ -237,8 +238,19 @@ export class MetadataLoader {
           }
         } catch (err) {
           try {
-            const m = await sharp(fullPath, {failOnError: false}).metadata();
-            MetadataLoader.mapMetadata(metadata, this.mapExifReader(exifReader(m.exif)), true);
+            // ExifReader parses HEIF container metadata without decoding image
+            // pixels or disabling libheif's security limits.
+            const fallbackExif = await ExifReader.load(fullPath, {expanded: true});
+            MetadataLoader.mapMetadata(metadata, this.mapExifReader(fallbackExif), true);
+            const makerNote = (fallbackExif.exif as any)?.MakerNote?.value;
+            if (makerNote) {
+              const contentId = MetadataLoader.parseAppleMakerNoteContentId(
+                Buffer.from(makerNote as number[])
+              );
+              if (contentId) {
+                metadata.contentIdentifier = contentId;
+              }
+            }
           } catch (e) {
             // ignoring errors
           }
@@ -255,14 +267,17 @@ export class MetadataLoader {
           ];
 
           for (const sidecarPath of sidecarPaths) {
-            if (fs.existsSync(sidecarPath)) {
-              const sidecarData: any = await exifr.sidecar(sidecarPath, exifrOptions);
-              if (sidecarData !== undefined) {
-                //note that since side cars are loaded last, data loaded here overwrites embedded metadata (in Pigallery2, not in the actual files)
-                // sidecar should not change the image dimension
-                MetadataLoader.mapMetadata(metadata, sidecarData, false);
-                break;
-              }
+            try {
+              await fs.promises.access(sidecarPath);
+            } catch (error) {
+              continue;
+            }
+            const sidecarData: any = await exifr.sidecar(sidecarPath, exifrOptions);
+            if (sidecarData !== undefined) {
+              //note that since side cars are loaded last, data loaded here overwrites embedded metadata (in Pigallery2, not in the actual files)
+              // sidecar should not change the image dimension
+              MetadataLoader.mapMetadata(metadata, sidecarData, false);
+              break;
             }
           }
         } catch (err) {
@@ -284,6 +299,147 @@ export class MetadataLoader {
       return MetadataLoader.EMPTY_METADATA;
     }
     return metadata;
+  }
+
+  private static async readPhotoDimensions(
+    fullPath: string
+  ): Promise<{width: number; height: number}> {
+    const extension = path.extname(fullPath).toLowerCase();
+    try {
+      const info = await ImageRendererFactory.metadata(
+        fullPath,
+        false,
+        Config.Media.Photo.sharpOptions as unknown as SharpOptions
+      );
+      if (
+        Number.isFinite(info.width) && info.width > 0 &&
+        Number.isFinite(info.height) && info.height > 0
+      ) {
+        return {width: info.width, height: info.height};
+      }
+    } catch (error) {
+      // Some formats are not supported by every libvips build.
+    }
+
+    if (extension === '.heic' || extension === '.avif') {
+      // Keep a bounded parser as a fallback for libheif builds that reject an
+      // otherwise readable container because of their decoding limits.
+      return MetadataLoader.readHeifDimensions(fullPath);
+    }
+
+    // The regular metadata pass below already extracts EXIF dimensions. Do not
+    // open the file again with ExifReader here: for unsupported large RAW files
+    // that fallback may buffer the complete input just to obtain two numbers.
+    throw new Error('Could not determine image dimensions');
+  }
+
+  /**
+   * Reads HEIF/AVIF `ispe` boxes from a bounded header. Every box must advance
+   * by at least its header size, preventing the zero-length infinite loops in
+   * image-size <= 2.0.2 (GHSA-5p2g-fcmc-qvqq).
+   */
+  private static async readHeifDimensions(
+    fullPath: string
+  ): Promise<{width: number; height: number}> {
+    const MAX_HEADER_SIZE = 512 * 1024;
+    const file = await fs.promises.open(fullPath, 'r');
+    try {
+      const stat = await file.stat();
+      if (stat.size <= 0) {
+        throw new Error('Empty image');
+      }
+      const input = Buffer.alloc(Math.min(stat.size, MAX_HEADER_SIZE));
+      const read = await file.read(input, 0, input.length, 0);
+      const header = input.subarray(0, read.bytesRead);
+
+      type IsoBox = {
+        name: string;
+        offset: number;
+        contentOffset: number;
+        size: number;
+        end: number;
+      };
+      const readBox = (offset: number, end: number): IsoBox | null => {
+        if (offset < 0 || end - offset < 8) {
+          return null;
+        }
+        let size = header.readUInt32BE(offset);
+        let headerSize = 8;
+        if (size === 1) {
+          if (end - offset < 16) {
+            return null;
+          }
+          const extendedSize = header.readBigUInt64BE(offset + 8);
+          if (extendedSize > BigInt(Number.MAX_SAFE_INTEGER)) {
+            return null;
+          }
+          size = Number(extendedSize);
+          headerSize = 16;
+        } else if (size === 0) {
+          size = end - offset;
+        }
+        if (size < headerSize || offset + size > end) {
+          return null;
+        }
+        return {
+          name: header.toString('ascii', offset + 4, offset + 8),
+          offset,
+          contentOffset: offset + headerSize,
+          size,
+          end: offset + size,
+        };
+      };
+      const findBox = (name: string, start: number, end: number): IsoBox | null => {
+        let offset = start;
+        let boxesRead = 0;
+        while (offset < end && boxesRead++ < 4096) {
+          const box = readBox(offset, end);
+          if (!box) {
+            return null;
+          }
+          if (box.name === name) {
+            return box;
+          }
+          offset = box.end;
+        }
+        return null;
+      };
+
+      const meta = findBox('meta', 0, header.length);
+      const iprp = meta && findBox('iprp', meta.contentOffset + 4, meta.end);
+      const ipco = iprp && findBox('ipco', iprp.contentOffset, iprp.end);
+      if (!ipco) {
+        throw new Error('Invalid HEIF: no ipco box');
+      }
+
+      const dimensions: Array<{width: number; height: number}> = [];
+      let offset = ipco.contentOffset;
+      let boxesRead = 0;
+      while (offset < ipco.end && boxesRead++ < 4096) {
+        const box = readBox(offset, ipco.end);
+        if (!box) {
+          break;
+        }
+        if (box.name === 'ispe' && box.end - box.contentOffset >= 12) {
+          const width = header.readUInt32BE(box.contentOffset + 4);
+          const height = header.readUInt32BE(box.contentOffset + 8);
+          if (width > 0 && height > 0) {
+            dimensions.push({width, height});
+          }
+        }
+        offset = box.end;
+      }
+      if (dimensions.length === 0) {
+        throw new Error('Invalid HEIF: no dimensions');
+      }
+      return dimensions.reduce((largest, current) =>
+        current.width * current.height > largest.width * largest.height ?
+          current :
+          largest
+      );
+    } finally {
+      await file.close();
+    }
   }
 
   private static mapMetadata(metadata: PhotoMetadata | VideoMetadata, exif: any, mapDimension = true) {
@@ -719,85 +875,59 @@ export class MetadataLoader {
     }
   }
 
-  private static mapExifReader(exif: exifReader.Exif): any {
+  private static mapExifReader(exif: ExifReader.ExpandedTags): any {
     if (!exif) {
       return {};
     }
 
-    const result: any = {};
-
-    // Map Image tags to ifd0 (this is where exifr puts TIFF/IFD0 data)
-    if (exif.Image) {
-      result.ifd0 = {...exif.Image};
-      // Convert Date objects to ISO strings for consistency with exifr
-      if (result.ifd0.DateTime instanceof Date) {
-        // Remove the 'Z' suffix and format as YYYY-MM-DD HH:MM:SS
-        const isoString = result.ifd0.DateTime.toISOString();
-        result.ifd0.DateTime = isoString.substring(0, 10) + ' ' + isoString.substring(11, 19);
+    const unwrap = (tag: any): any => {
+      const value = tag?.value;
+      if (!Array.isArray(value)) {
+        return value;
       }
+      if (value.length === 1) {
+        return value[0];
+      }
+      if (value.length === 2 && value.every((part: unknown) => typeof part === 'number')) {
+        return value[1] === 0 ? 0 : value[0] / value[1];
+      }
+      return value;
+    };
+    const tags = exif.exif || {};
+    const normalizedExif: any = {};
+    for (const [name, tag] of Object.entries(tags)) {
+      normalizedExif[name] = unwrap(tag);
     }
+    normalizedExif.ExifImageWidth = normalizedExif.ExifImageWidth ?? normalizedExif.PixelXDimension;
+    normalizedExif.ExifImageHeight = normalizedExif.ExifImageHeight ?? normalizedExif.PixelYDimension;
 
-    // Map Photo tags to exif (this is where exifr puts EXIF data)
-    if (exif.Photo) {
-      result.exif = {...exif.Photo};
-      // Convert Date objects to ISO strings without 'Z' suffix, format as YYYY-MM-DD HH:MM:SS
-      // The offset will be added from OffsetTimeOriginal/OffsetTimeDigitized by mapTimestampAndOffset
-      if (result.exif.DateTimeOriginal instanceof Date) {
-        const isoString = result.exif.DateTimeOriginal.toISOString();
-        result.exif.DateTimeOriginal = isoString.substring(0, 10) + ' ' + isoString.substring(11, 19);
-      }
-      if (result.exif.DateTimeDigitized instanceof Date) {
-        const isoString = result.exif.DateTimeDigitized.toISOString();
-        result.exif.DateTimeDigitized = isoString.substring(0, 10) + ' ' + isoString.substring(11, 19);
-      }
+    const result: any = {
+      ifd0: {
+        Make: normalizedExif.Make,
+        Model: normalizedExif.Model,
+        Orientation: normalizedExif.Orientation,
+        ImageDescription: normalizedExif.ImageDescription,
+        ImageWidth: normalizedExif.ImageWidth,
+        ImageHeight: normalizedExif.ImageHeight,
+        ModifyDate: normalizedExif.DateTime,
+      },
+      exif: normalizedExif,
+    };
+    if (exif.gps) {
+      result.gps = {
+        latitude: exif.gps.Latitude,
+        longitude: exif.gps.Longitude,
+        altitude: exif.gps.Altitude,
+      };
     }
-
-    // Map GPSInfo to both gps (with calculated decimal degrees) and exif (with raw data)
-    if (exif.GPSInfo) {
-      // Add raw GPS data to exif section (for fallback parsing in mapGPS)
-      if (!result.exif) {
-        result.exif = {};
-      }
-
-      // Copy GPS arrays to exif section for xmpExifGpsCoordinateToDecimalDegrees parsing
-      if (exif.GPSInfo.GPSLatitude) {
-        result.exif.GPSLatitude = exif.GPSInfo.GPSLatitude;
-      }
-      if (exif.GPSInfo.GPSLongitude) {
-        result.exif.GPSLongitude = exif.GPSInfo.GPSLongitude;
-      }
-
-      // Create gps section with decimal degrees (preferred by mapGPS)
-      result.gps = {};
-
-      // Convert GPS coordinates from [degrees, minutes, seconds] to decimal degrees
-      if (exif.GPSInfo.GPSLatitude && exif.GPSInfo.GPSLatitudeRef) {
-        const lat = exif.GPSInfo.GPSLatitude;
-        let latitude = lat[0] + lat[1] / 60 + lat[2] / 3600;
-        if (exif.GPSInfo.GPSLatitudeRef === 'S') {
-          latitude = -latitude;
-        }
-        result.gps.latitude = latitude;
-      }
-
-      if (exif.GPSInfo.GPSLongitude && exif.GPSInfo.GPSLongitudeRef) {
-        const lon = exif.GPSInfo.GPSLongitude;
-        let longitude = lon[0] + lon[1] / 60 + lon[2] / 3600;
-        if (exif.GPSInfo.GPSLongitudeRef === 'W') {
-          longitude = -longitude;
-        }
-        result.gps.longitude = longitude;
-      }
-
-      // Map altitude if present
-      if (exif.GPSInfo.GPSAltitude !== undefined) {
-        result.gps.altitude = exif.GPSInfo.GPSAltitude;
-        if (exif.GPSInfo.GPSAltitudeRef === 1) {
-          result.gps.altitude = -result.gps.altitude;
+    if (exif.xmp) {
+      result.xmp = {};
+      for (const [name, tag] of Object.entries(exif.xmp)) {
+        if (name !== '_raw') {
+          result.xmp[name] = unwrap(tag);
         }
       }
     }
-
     return result;
   }
 

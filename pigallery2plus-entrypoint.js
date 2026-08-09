@@ -3,26 +3,39 @@ const fs = require('fs');
 const net = require('net');
 const {spawn} = require('child_process');
 
-const configPath = process.env.PIGALLERY_CONFIG_PATH || '/app/data/config/config.json';
+const cliArgs = process.argv.slice(2);
 const waitTimeoutMs = Math.max(0, Number(process.env.PIGALLERY_DB_WAIT_TIMEOUT || 300)) * 1000;
 const retryMs = Math.max(500, Number(process.env.PIGALLERY_DB_WAIT_RETRY_MS || 2000));
+
+function cliValue(name) {
+  const prefix = `--${name}=`;
+  const argument = cliArgs.find(value => value.startsWith(prefix));
+  return argument ? argument.slice(prefix.length) : undefined;
+}
+
+const configPath = process.env.PIGALLERY_CONFIG_PATH || cliValue('config-path') || '/app/data/config/config.json';
+let appProcess = null;
 
 function readDatabaseConfig() {
   try {
     const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     const database = config.Database || config.database || {};
-    if (String(database.type || '').toLowerCase() !== 'mysql') {
+    const databaseType = database.type || cliValue('Database-type') || process.env.DATABASE_TYPE;
+    if (String(databaseType || '').toLowerCase() !== 'mysql') {
       return null;
     }
     const mysql = database.mysql || {};
-    const host = mysql.host || process.env.default_Database_mysql_host;
-    const port = Number(mysql.port || process.env.default_Database_mysql_port || 3306);
+    const host = mysql.host || cliValue('Database-mysql-host') || process.env.MYSQL_HOST;
+    const port = Number(mysql.port || cliValue('Database-mysql-port') || process.env.MYSQL_PORT || 3306);
     if (!host || !port) {
       return null;
     }
     return {host, port};
   } catch (e) {
-    return null;
+    const databaseType = cliValue('Database-type') || process.env.DATABASE_TYPE;
+    const host = cliValue('Database-mysql-host') || process.env.MYSQL_HOST;
+    const port = Number(cliValue('Database-mysql-port') || process.env.MYSQL_PORT || 3306);
+    return String(databaseType || '').toLowerCase() === 'mysql' && host && port ? {host, port} : null;
   }
 }
 
@@ -62,15 +75,28 @@ function startApp() {
   const args = [
     '--expose-gc',
     './src/backend/index',
-    '--config-path=/app/data/config/config.json',
   ];
-  const child = spawn(process.execPath, args, {stdio: 'inherit'});
-  child.on('exit', (code, signal) => {
+  if (!cliArgs.some(argument => argument.startsWith('--config-path='))) {
+    args.push('--config-path=/app/data/config/config.json');
+  }
+  args.push(...cliArgs);
+  appProcess = spawn(process.execPath, args, {stdio: 'inherit'});
+  appProcess.on('exit', (code, signal) => {
     if (signal) {
       process.kill(process.pid, signal);
       return;
     }
     process.exit(code || 0);
+  });
+}
+
+for (const signal of ['SIGTERM', 'SIGINT']) {
+  process.on(signal, () => {
+    if (appProcess) {
+      appProcess.kill(signal);
+    } else {
+      process.exit(0);
+    }
   });
 }
 

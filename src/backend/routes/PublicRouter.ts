@@ -1,6 +1,5 @@
 import {Express, NextFunction, Request, Response} from 'express';
 import * as path from 'path';
-import * as fs from 'fs';
 import * as ejs from 'ejs';
 import {Config} from '../../common/config/private/Config';
 import {ProjectPath} from '../ProjectPath';
@@ -13,6 +12,9 @@ import {QueryParams} from '../../common/QueryParams';
 import {PhotoProcessing} from '../model/fileaccess/fileprocessing/PhotoProcessing';
 import {Utils} from '../../common/Utils';
 import {ObjectManagers} from '../model/ObjectManagers';
+import {FrontendAssetCache} from '../model/fileaccess/FrontendAssetCache';
+
+const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -32,8 +34,11 @@ declare global {
 
 export class PublicRouter {
   public static route(app: Express): void {
-    const setLocale = (req: Request, res: Response, next: NextFunction) => {
-      let selectedLocale = req.locale;
+    const frontendAssetCache = new FrontendAssetCache();
+    frontendAssetCache.preload(ProjectPath.FrontendFolder);
+
+    const selectLocale = (req: Request): string => {
+      let selectedLocale = req.locale || 'en';
       if (req.cookies && req.cookies[CookieNames.lang]) {
         if (
           Config.Server.languages.indexOf(req.cookies[CookieNames.lang]) !== -1
@@ -41,8 +46,22 @@ export class PublicRouter {
           selectedLocale = req.cookies[CookieNames.lang];
         }
       }
-      res.cookie(CookieNames.lang, selectedLocale);
       req.localePath = selectedLocale;
+      return selectedLocale;
+    };
+
+    const setLocale = (req: Request, res: Response, next: NextFunction) => {
+      const selectedLocale = selectLocale(req);
+      if (req.cookies?.[CookieNames.lang] !== selectedLocale) {
+        res.cookie(CookieNames.lang, selectedLocale);
+      }
+      next();
+    };
+
+    // Static files need a locale folder, but setting a cookie on every bundle
+    // response prevents clean intermediary caching and adds needless headers.
+    const selectStaticLocale = (req: Request, res: Response, next: NextFunction) => {
+      selectLocale(req);
       next();
     };
 
@@ -107,8 +126,6 @@ export class PublicRouter {
 
       return next();
     };
-
-    app.use(addTPl);
 
     app.get('/heartbeat', (req: Request, res: Response) => {
       res.sendStatus(200);
@@ -258,7 +275,8 @@ export class PublicRouter {
         const outP = await PhotoProcessing.renderSVG(Config.Server.svgIcon, p);
         res.sendFile(path.basename(outP), {
           root: path.dirname(outP),
-          maxAge: 31536000,
+          maxAge: ONE_YEAR_MS,
+          immutable: true,
           dotfiles: 'allow',
         });
       } catch (e) {
@@ -275,7 +293,8 @@ export class PublicRouter {
         const outP = await PhotoProcessing.renderSVG(Config.Server.svgIcon, p, 'white');
         res.sendFile(path.basename(outP), {
           root: path.dirname(outP),
-          maxAge: 31536000,
+          maxAge: ONE_YEAR_MS,
+          immutable: true,
           dotfiles: 'allow',
         });
       } catch (e) {
@@ -334,12 +353,18 @@ export class PublicRouter {
         if (!file) {
           return res.sendStatus(404);
         }
-        if (!fs.existsSync(file)) {
+        if (frontendAssetCache.send(req, res, file)) {
+          return;
+        }
+        const location = frontendAssetCache.resolveForFallback(file);
+        if (!location) {
           return res.sendStatus(404);
         }
-        res.sendFile(path.basename(file), {
-          root: path.dirname(file),
-          maxAge: 31536000,
+        const immutable = FrontendAssetCache.isImmutable(file);
+        res.sendFile(location.relativePath, {
+          root: location.root,
+          maxAge: immutable ? ONE_YEAR_MS : 0,
+          immutable,
           dotfiles: 'allow',
         });
       };
@@ -347,13 +372,13 @@ export class PublicRouter {
 
     app.get(
       '/assets/:file(*)',
-      setLocale,
+      selectStaticLocale,
       AuthenticationMWs.normalizePathParam('file'),
       renderFile('assets')
     );
     app.get(
       '/:file',
-      setLocale,
+      selectStaticLocale,
       AuthenticationMWs.normalizePathParam('file'),
       renderFile()
     );

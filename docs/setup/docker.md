@@ -2,7 +2,7 @@
 
 [Docker](https://www.docker.com/) with [docker-compose](https://docs.docker.com/compose/) is the **official and recommended** way of installing and running PiGallery2. 
 
-You can use [docker](https://docs.docker.com/install/) to run PiGallery2. See all available docker tags [here](https://hub.docker.com/r/bpatrik/pigallery2/tags/).
+You can use [docker](https://docs.docker.com/install/) to run PiGallery2 Plus. See all available docker tags [here](https://hub.docker.com/r/railline/pigallery2plus/tags/).
 available tags:
  - `v*` (stable): built from the release with the same version name.
  - `latest` (stable): same as the latest `v*`, built with debian buster.
@@ -38,8 +38,8 @@ sudo pip3 install docker-compose
 Check success with `docker-compose --version`.
 
 ### I.1 Get docker-compose.yml file
-Download [docker-compose/default/docker-compose.yml](https://github.com/bpatrik/pigallery2/blob/master/docker/docker-compose/default/docker-compose.yml) and 
-[docker-compose/default/nginx.conf](https://github.com/bpatrik/pigallery2/blob/master/docker/docker-compose/default/nginx.conf).
+Download [docker-compose/default/docker-compose.yml](https://github.com/Railline/pigallery2plus/blob/main/docker/docker-compose/default/docker-compose.yml) and
+[docker-compose/default/nginx.conf](https://github.com/Railline/pigallery2plus/blob/main/docker/docker-compose/default/nginx.conf).
 
 Edit `docker-compose.yml` at the `# CHANGE ME` lines to point the volumes to the right `image` and `tmp` directories.
 Edit `nginx.conf` at the `# CHANGE ME` lines by replacing `yourdomain.com` with your domain address.
@@ -48,7 +48,7 @@ Edit `nginx.conf` at the `# CHANGE ME` lines by replacing `yourdomain.com` with 
 
 **Note:** We are using nginx as reverse proxy to handle https and do proper HTTP queuing, gzipping, etc. Full nginx-based docker-compose tutorial [here](https://www.domysee.com/blogposts/reverse-proxy-nginx-docker-compose).
 
-**Note 2:** You can skip nginx, by using [docker-compose/pigallery2-only/docker-compose.yml](https://github.com/bpatrik/pigallery2/blob/master/docker/docker-compose/pigallery2-only/docker-compose.yml).
+**Note 2:** You can skip nginx, by using [docker-compose/pigallery2-only/docker-compose.yml](https://github.com/Railline/pigallery2plus/blob/main/docker/docker-compose/pigallery2-only/docker-compose.yml).
 
 ### I.1.a Get SSL Certificate with Certbot
 Install Certbot: https://certbot.eff.org/. (Certbot uses letsencrypt to get free certificate).
@@ -90,7 +90,7 @@ docker run \
    -v <path to your db file folder>:/app/data/db \
    -v <path to your images folder>:/app/data/images \
    -v <path to your temp folder>:/app/data/tmp \
-   bpatrik/pigallery2:latest
+   railline/pigallery2plus:latest
 ```
 
 After the container is up and running, go to `http://localhost` and log in with user: `admin` pass: `admin` and set up the page in the settings. 
@@ -118,8 +118,13 @@ You do not need the `<path to your db file folder>/sqlite.db` line if you don't 
 
 ## Build the Docker image on your own
  
-You can clone the repository and build the image, or you can just use the 'self-contained' Dockerfile: [debian-trixie/selfcontained/Dockerfile](https://github.com/bpatrik/pigallery2/blob/master/docker/debian-trixie/selfcontained/Dockerfile)
+You can clone the repository and build the image, or you can just use the 'self-contained' Dockerfile: [debian-trixie/selfcontained/Dockerfile](https://github.com/Railline/pigallery2plus/blob/main/docker/debian-trixie/selfcontained/Dockerfile)
 Note: 'self-contained' is not well tested, bug fix PRs are welcome.
+
+The stock images use the libvips version bundled with Sharp. HEIC metadata can be
+indexed, but rendering HEIC thumbnails requires a custom image with a
+Sharp-compatible libvips build that includes HEIF/HEVC support. Startup
+diagnostics automatically disable formats that the active image cannot decode.
 
 ## Contributing to Docker
 See the [Docker Contribution Guide](../development/docker-contributing.md).

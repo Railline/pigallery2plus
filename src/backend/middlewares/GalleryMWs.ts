@@ -1,6 +1,6 @@
 import * as path from 'path';
 import {promises as fsp} from 'fs';
-import * as archiver from 'archiver';
+import archiver = require('archiver');
 import {NextFunction, Request, Response} from 'express';
 import {ErrorCodes, ErrorDTO} from '../../common/entities/Error';
 import {ParentDirectoryDTO,} from '../../common/entities/DirectoryDTO';
@@ -18,19 +18,24 @@ import {LocationLookupException} from '../exceptions/LocationLookupException';
 import {ServerTime} from './ServerTimingMWs';
 import {Logger} from '../Logger';
 import {UserRoles} from '../../common/entities/UserDTO';
-import {ContextUser} from '../model/SessionContext';
+import {ContextUser, SessionContext} from '../model/SessionContext';
 import {SortingMethod} from '../../common/entities/SortingMethods';
+import {PhotoProcessing} from '../model/fileaccess/fileprocessing/PhotoProcessing';
+import {ThumbnailSourceType} from '../model/fileaccess/PhotoWorker';
 
 export class GalleryMWs {
+  private static readonly MAX_SEARCH_PAGE_SIZE = 1000;
   private static readonly RANDOM_CACHE_TTL = 15 * 60 * 1000;
   private static readonly RANDOM_CACHE_MAX = 64;
   private static readonly RANDOM_BATCH_SIZE = 15;
   private static readonly RANDOM_REFILL_THRESHOLD = 5;
+  private static readonly RANDOM_DEFAULT_PREVIEW_SIZE = 1080;
   private static readonly randomMediaPathCache = new Map<string, {
     paths: string[],
     expires: number,
     created: number,
     hits: number,
+    refill?: Promise<void>,
   }>();
 
   /**
@@ -64,6 +69,18 @@ export class GalleryMWs {
             )
           );
         }
+      }
+
+      try {
+        SearchQueryUtils.validateSearchQuery(query);
+      } catch (validationError) {
+        return next(
+          new ErrorDTO(
+            ErrorCodes.INPUT_ERROR,
+            'Invalid search query: ' + (validationError as Error).message,
+            validationError
+          )
+        );
       }
 
       // Store the parsed query for use by subsequent middlewares
@@ -250,11 +267,13 @@ export class GalleryMWs {
       const pairLivePhotos = (mediaList: MediaDTO[], parentDir?: ParentDirectoryDTO): MediaDTO[] => {
         // Build a map of (contentIdentifier + dirPath) → video for companion videos
         const companionMap = new Map<string, MediaDTO>();
+        const videos = new Set<MediaDTO>();
         for (const m of mediaList) {
-          if (
-            MediaDTOUtils.isVideo(m) &&
-            m.metadata?.contentIdentifier
-          ) {
+          const isVideo = MediaDTOUtils.isVideo(m);
+          if (isVideo) {
+            videos.add(m);
+          }
+          if (isVideo && m.metadata?.contentIdentifier) {
             const dir = m.directory || parentDir;
             const dirPath = path.join(dir?.path || '', dir?.name || '');
             companionMap.set(m.metadata.contentIdentifier + '|' + dirPath, m);
@@ -265,7 +284,7 @@ export class GalleryMWs {
         const pairedVideoKeys = new Set<string>();
         for (const m of mediaList) {
           if (
-            !MediaDTOUtils.isVideo(m) &&
+            !videos.has(m) &&
             m.metadata?.contentIdentifier
           ) {
             const dir = m.directory || parentDir;
@@ -295,7 +314,7 @@ export class GalleryMWs {
 
         return mediaList.filter(
           (m) => {
-            if (!MediaDTOUtils.isVideo(m) || !m.metadata?.contentIdentifier) {
+            if (!videos.has(m) || !m.metadata?.contentIdentifier) {
               return true;
             }
             const dir = m.directory || parentDir;
@@ -353,21 +372,8 @@ export class GalleryMWs {
       );
     }
 
-    // check if file exist
-    try {
-      if ((await fsp.stat(fullMediaPath)).isDirectory()) {
-        return next();
-      }
-    } catch (e) {
-      return next(
-        new ErrorDTO(
-          ErrorCodes.PATH_ERROR,
-          'no such file:' + req.params['mediaPath'],
-          'can\'t find file: ' + fullMediaPath
-        )
-      );
-    }
-
+    // Existence is checked by the final renderer for original media. Thumbnail
+    // requests can now use a cached local conversion without touching the NAS.
     req.resultPipe = fullMediaPath;
     return next();
   }
@@ -446,7 +452,10 @@ export class GalleryMWs {
       const paging = Number.isFinite(mediaLimit) && mediaLimit > 0
         ? {
           offset: Number.isFinite(mediaOffset) && mediaOffset > 0 ? mediaOffset : 0,
-          limit: Math.min(mediaLimit, Math.max(Config.Search.maxMediaResult, mediaLimit)),
+          limit: Math.min(
+            mediaLimit,
+            Math.max(1, Math.min(Config.Search.maxMediaResult, GalleryMWs.MAX_SEARCH_PAGE_SIZE))
+          ),
         }
         : undefined;
       const result = await ObjectManagers.getInstance().SearchManager.search(
@@ -523,8 +532,9 @@ export class GalleryMWs {
       }
 
       const query: SearchQueryDTO = req.resultPipe as any;
+      const context = req.randomLinkContext || req.session.context;
       const started = Date.now();
-      const cacheKey = GalleryMWs.getRandomCacheKey(req, query);
+      const cacheKey = GalleryMWs.getRandomCacheKey(req, context, query);
       let cache = GalleryMWs.randomMediaPathCache.get(cacheKey);
       const now = Date.now();
 
@@ -542,24 +552,32 @@ export class GalleryMWs {
       }
 
       if (cache.paths.length <= GalleryMWs.RANDOM_REFILL_THRESHOLD) {
-        const sqlStarted = Date.now();
-        const paths = await ObjectManagers.getInstance().SearchManager.getRandomMediaPaths(
-          req.session.context,
-          query,
-          GalleryMWs.RANDOM_BATCH_SIZE,
-          true
-        );
-        GalleryMWs.shuffle(paths);
-        cache.paths = paths.slice(0, GalleryMWs.RANDOM_BATCH_SIZE);
-        cache.expires = Date.now() + GalleryMWs.RANDOM_CACHE_TTL;
-        Logger.info(
-          '[RandomPhoto]',
-          'cache refill',
-          'batch=' + paths.length,
-          'remaining=' + cache.paths.length,
-          'sqlMs=' + (Date.now() - sqlStarted),
-          'key=' + cacheKey.slice(0, 16)
-        );
+        const activeCache = cache;
+        if (!activeCache.refill) {
+          activeCache.refill = (async (): Promise<void> => {
+            const sqlStarted = Date.now();
+            const paths = await ObjectManagers.getInstance().SearchManager.getRandomMediaPaths(
+              context,
+              query,
+              GalleryMWs.RANDOM_BATCH_SIZE,
+              true
+            );
+            GalleryMWs.shuffle(paths);
+            activeCache.paths = paths.slice(0, GalleryMWs.RANDOM_BATCH_SIZE);
+            activeCache.expires = Date.now() + GalleryMWs.RANDOM_CACHE_TTL;
+            Logger.info(
+              '[RandomPhoto]',
+              'cache refill',
+              'batch=' + paths.length,
+              'remaining=' + activeCache.paths.length,
+              'sqlMs=' + (Date.now() - sqlStarted),
+              'key=' + cacheKey.slice(0, 16)
+            );
+          })().finally((): void => {
+            delete activeCache.refill;
+          });
+        }
+        await activeCache.refill;
       } else {
         Logger.info(
           '[RandomPhoto]',
@@ -576,12 +594,11 @@ export class GalleryMWs {
 
       const selected = cache.paths.shift();
       req.params['mediaPath'] = selected;
-      Logger.info(
+      Logger.silly(
         '[RandomPhoto]',
         'selected',
         'totalMs=' + (Date.now() - started),
-        'remaining=' + cache.paths.length,
-        'path=' + selected
+        'remaining=' + cache.paths.length
       );
       return next();
     } catch (e) {
@@ -592,6 +609,86 @@ export class GalleryMWs {
         )
       );
     }
+  }
+
+  /**
+   * Random links are commonly polled by wallpaper and dashboard clients. Serve
+   * a cached preview instead of repeatedly streaming a potentially large source
+   * file from the media storage. The original remains available explicitly via
+   * `?size=original`.
+   */
+  public static async loadRandomImagePreview(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    if (!req.resultPipe) {
+      return next();
+    }
+
+    // A random URL is expected to return a different image on every request.
+    // RenderingMWs preserves this header instead of applying its immutable
+    // one-year file cache policy.
+    res.setHeader('Cache-Control', 'no-store');
+
+    const rawSize = req.query['size'];
+    const requestedSize = Array.isArray(rawSize) ? rawSize[0] : rawSize;
+    if (
+      typeof requestedSize === 'string' &&
+      requestedSize.trim().toLowerCase() === 'original'
+    ) {
+      return next();
+    }
+
+    const sizes = Config.Media.Photo.thumbnailSizes
+      .filter((size): boolean => Number.isFinite(size) && size > 0)
+      .slice()
+      .sort((a, b): number => a - b);
+    if (sizes.length === 0) {
+      return next();
+    }
+
+    const parsedSize = typeof requestedSize === 'string'
+      ? Number(requestedSize)
+      : Number.NaN;
+    const hasExplicitPreviewSize = Number.isFinite(parsedSize) && parsedSize > 0;
+    const targetSize = hasExplicitPreviewSize
+      ? parsedSize
+      : GalleryMWs.RANDOM_DEFAULT_PREVIEW_SIZE;
+    const previewSize = sizes.reduce((closest, candidate): number =>
+      Math.abs(candidate - targetSize) < Math.abs(closest - targetSize)
+        ? candidate
+        : closest
+    );
+
+    const originalPath = req.resultPipe as string;
+    try {
+      if (!hasExplicitPreviewSize) {
+        const cachedPreview = await PhotoProcessing.findExistingThumbnail(
+          originalPath,
+          sizes
+        );
+        if (cachedPreview) {
+          req.resultPipe = cachedPreview;
+          return next();
+        }
+      }
+      req.resultPipe = await PhotoProcessing.generateThumbnail(
+        originalPath,
+        previewSize,
+        ThumbnailSourceType.Photo,
+        false
+      );
+    } catch (error) {
+      // A random image should remain available if preview generation fails.
+      req.resultPipe = originalPath;
+      Logger.warn(
+        '[RandomPhoto]',
+        'Preview generation failed, serving the original: ' +
+        (error instanceof Error ? error.message : String(error))
+      );
+    }
+    return next();
   }
 
   public static async getMediaEntry(
@@ -644,17 +741,23 @@ export class GalleryMWs {
       if (!sharing || sharing.expires < Date.now() || !sharing.searchQuery) {
         return next(new ErrorDTO(ErrorCodes.INPUT_ERROR, 'Sharing link not found'));
       }
-      if (!req.session.context) {
-        const user = {
-          name: 'Guest',
-          role: UserRoles.LimitedGuest,
-          usedSharingKey: sharing.sharingKey,
-          overrideAllowBlockList: true,
-          allowQuery: ObjectManagers.getInstance().SessionManager.buildAllowListForSharing(sharing)
-        } as ContextUser;
-        req.session.context = await ObjectManagers.getInstance().SessionManager.buildContext(user);
-        (req as any).temporaryRandomLinkContext = true;
+      // A random-link endpoint cannot prompt for a password. Exposing a regular
+      // protected share here would silently bypass its authentication.
+      if (Config.Sharing.passwordRequired || Boolean(sharing.password)) {
+        res.status(403);
+        return next(new ErrorDTO(ErrorCodes.NOT_AUTHORISED, 'Password-protected sharing links cannot be used as public random links'));
       }
+      const user = {
+        id: null,
+        name: 'Guest',
+        role: UserRoles.LimitedGuest,
+        usedSharingKey: sharing.sharingKey,
+        overrideAllowBlockList: true,
+        allowQuery: ObjectManagers.getInstance().SessionManager.buildAllowListForSharing(sharing)
+      } as ContextUser;
+      // Keep the share-specific ACL request-scoped. Mutating req.session here
+      // could persist guest privileges if a later middleware fails.
+      req.randomLinkContext = await ObjectManagers.getInstance().SessionManager.buildContext(user);
       req.resultPipe = sharing.searchQuery;
       return next();
     } catch (e) {
@@ -667,20 +770,8 @@ export class GalleryMWs {
     }
   }
 
-  public static clearTemporaryRandomLinkContext(
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ): void {
-    if ((req as any).temporaryRandomLinkContext) {
-      delete req.session.context;
-      delete (req as any).temporaryRandomLinkContext;
-    }
-    return next();
-  }
-
-  private static getRandomCacheKey(req: Request, query: SearchQueryDTO): string {
-    const user = req.session.context?.user;
+  private static getRandomCacheKey(req: Request, context: SessionContext, query: SearchQueryDTO): string {
+    const user = context?.user;
     const projection = user?.projectionKey || '';
     const sharingKey = user?.usedSharingKey || req.query[QueryParams.gallery.sharingKey_query] || '';
     return [

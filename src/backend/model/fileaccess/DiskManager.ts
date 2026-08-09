@@ -197,7 +197,6 @@ export class DiskManager {
       return directory;
     }
     const list = await fsp.readdir(absoluteDirectoryName, {withFileTypes: true});
-    let count = 0;
     let completed = 0;
     let lastProgressAt = 0;
 
@@ -226,14 +225,6 @@ export class DiskManager {
       stopCoverScan?: boolean;
     }> => {
       const file = dirent.name;
-      count++;
-
-      if (count % 1000 === 0) {
-        if (global.gc) {
-          Logger.silly(LOG_TAG, 'Triggering gc after scanning ', count, ' files in dir: ', relativeDirectoryName);
-          global.gc();
-        }
-      }
       const fullFilePath = path.normalize(
         path.join(absoluteDirectoryName, file)
       );

@@ -294,4 +294,17 @@ describe('SearchQueryDTOUtils.urlify', () => {
     };
     assertValid(q);
   });
+
+  it('should reject prototype-manipulation keys while parsing URL queries', () => {
+    expect(() => SearchQueryUtils.parseURLifiedQuery(
+      '{"__proto__":{"polluted":true},"t":104,"v":"x"}'
+    )).to.throw('Unsafe search query key');
+    expect(({} as any).polluted).to.be.undefined;
+  });
+
+  it('should reject unsafe keys at any nesting depth', () => {
+    expect(() => SearchQueryUtils.parseURLifiedQuery(
+      '{"t":1,"l":[{"t":104,"v":"x","constructor":{"prototype":{"polluted":true}}}]}'
+    )).to.throw('Unsafe search query key');
+  });
 });

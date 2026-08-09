@@ -19,4 +19,18 @@ describe('ExtensionRepository', () => {
     const extensions = (new ExtensionRepository()).repoMD(text);
     expect(extensions[0].id).to.deep.equal('sample-extension');
   });
+
+  it('should accept plain HTTP(S) URLs without crashing', () => {
+    const repository = new ExtensionRepository() as any;
+    expect(repository.getUrlFromMDLink('https://example.com/extension.zip'))
+      .to.equal('https://example.com/extension.zip');
+    expect(repository.getUrlFromMDLink('[Download](https://example.com/extension.zip)'))
+      .to.equal('https://example.com/extension.zip');
+    expect(repository.getUrlFromMDLink('javascript:alert(1)')).to.be.undefined;
+  });
+
+  it('should ignore documents without the expected repository table', () => {
+    expect(new ExtensionRepository().repoMD('# Not an extension repository'))
+      .to.deep.equal([]);
+  });
 });

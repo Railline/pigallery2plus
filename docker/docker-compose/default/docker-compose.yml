@@ -1,4 +1,3 @@
-version: '3'
 services:
   nginx:
     image: nginx:latest
@@ -14,8 +13,8 @@ services:
     restart: always
 
   pigallery2:
-    image: bpatrik/pigallery2:latest
-    container_name: pigallery2
+    image: railline/pigallery2plus:latest
+    container_name: pigallery2plus
     deploy:
       resources:
         limits:

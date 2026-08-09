@@ -29,6 +29,9 @@ chai.use(chaiHttp);
 describe('UploadRouter', () => {
   const sqlHelper = new DBTestHelper(DatabaseType.sqlite);
   const testDir = path.join(__dirname, 'tmp_upload');
+  const originalMediaFolder = Config.Media.folder;
+  const originalUploadEnabled = Config.Upload.enabled;
+  const originalEnforcedDirectoryConfig = Config.Upload.enforcedDirectoryConfig;
 
   const adminUser: UserDTO = {
     id: 1,
@@ -49,6 +52,10 @@ describe('UploadRouter', () => {
   });
 
   after(async () => {
+    Config.Media.folder = originalMediaFolder;
+    Config.Upload.enabled = originalUploadEnabled;
+    Config.Upload.enforcedDirectoryConfig = originalEnforcedDirectoryConfig;
+    ProjectPath.reset();
     if (fs.existsSync(testDir)) {
       fs.rmSync(testDir, {recursive: true, force: true});
     }
@@ -61,6 +68,9 @@ describe('UploadRouter', () => {
     server = new Server(false);
     await server.onStarted.wait();
     await ObjectManagers.getInstance().init();
+    // Server startup reloads configuration; restore the isolated media root.
+    Config.Media.folder = testDir;
+    ProjectPath.reset();
     Config.Upload.enabled = true; // Set it again after init
     Config.Upload.enforcedDirectoryConfig = false;
     await ObjectManagers.getInstance().UserManager.createUser(Utils.clone(adminUser));

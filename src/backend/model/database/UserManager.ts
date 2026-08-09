@@ -12,12 +12,13 @@ export class UserManager {
 
   public async findOne(filter: FindOptionsWhere<UserEntity>): Promise<UserEntity> {
     const connection = await SQLConnection.getConnection();
-    const verifyPassword = typeof filter.password == 'string';
-    const pass = filter.password as string;
-    delete filter.password;
-    const user = await connection.getRepository(UserEntity).findOneBy(filter);
+    const where = {...filter};
+    const verifyPassword = typeof where.password == 'string';
+    const pass = where.password as string;
+    delete where.password;
+    const user = await connection.getRepository(UserEntity).findOneBy(where);
 
-    if (verifyPassword && !PasswordHelper.comparePassword(pass, user.password)) {
+    if (!user || (verifyPassword && !PasswordHelper.comparePassword(pass, user.password))) {
       throw new Error('No entry found');
     }
     return user;

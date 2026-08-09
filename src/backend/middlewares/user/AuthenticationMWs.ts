@@ -13,6 +13,25 @@ import {ContextUser} from '../../model/SessionContext';
 const LOG_TAG = 'AuthenticationMWs';
 
 export class AuthenticationMWs {
+  private static readonly PRINCIPAL_CACHE_TTL = 30 * 1000;
+  private static readonly PRINCIPAL_CACHE_MAX = 4096;
+  private static readonly principalCache = new Map<string, {
+    expires: number;
+    user: ContextUser | null;
+  }>();
+
+  public static invalidateUser(userId: number): void {
+    const prefix = 'user:' + userId + ':';
+    for (const key of AuthenticationMWs.principalCache.keys()) {
+      if (key.startsWith(prefix)) {
+        AuthenticationMWs.principalCache.delete(key);
+      }
+    }
+  }
+
+  public static invalidateSharing(sharingKey: string): void {
+    AuthenticationMWs.principalCache.delete('share:' + sharingKey);
+  }
 
   public static async tryAuthenticate(
     req: Request,
@@ -23,6 +42,17 @@ export class AuthenticationMWs {
       const user = ObjectManagers.getInstance().UserManager.getUnAuthenticatedUser();
       req.session.context = await ObjectManagers.getInstance().SessionManager.buildContext(user);
       return next();
+    }
+    if (req.session.context) {
+      try {
+        const persisted = await AuthenticationMWs.refreshPersistedPrincipal(req);
+        if (persisted !== false) {
+          return next();
+        }
+      } catch (err) {
+        delete req.session.context;
+        Logger.warn(LOG_TAG, 'Could not refresh persisted authentication context:', err);
+      }
     }
     try {
       const user = await AuthenticationMWs.getSharingUser(req);
@@ -48,20 +78,26 @@ export class AuthenticationMWs {
       return next();
     }
 
-    // if already authenticated, do not try to use sharing authentication
+    // Revalidate persisted users and shares periodically. The cookie is signed,
+    // but a deleted/demoted principal must not keep stale permissions forever.
     if (typeof req.session.context !== 'undefined') {
-      // fix context. projectionQuery gets lost in the session between calls
-      if (req.session?.context && req.session.context?.user?.projectionKey && (!req.session.context?.projectionQuery || Object.keys(req.session.context?.projectionQuery || {}).length === 0)) {
-        req.session.context = await ObjectManagers.getInstance().SessionManager.buildContext(req.session.context.user);
+      try {
+        const persisted = await AuthenticationMWs.refreshPersistedPrincipal(req);
+        if (persisted === false) {
+          delete req.session.context;
+        } else {
+          // Projection Brackets are not serializable and disappear between calls.
+          if (persisted === null && req.session.context?.user?.projectionKey && (!req.session.context?.projectionQuery || Object.keys(req.session.context?.projectionQuery || {}).length === 0)) {
+            req.session.context = await ObjectManagers.getInstance().SessionManager.buildContext(req.session.context.user);
+          }
+          AuthenticationMWs.extendRememberedSession(req);
+          return next();
+        }
+      } catch (err) {
+        delete req.session.context;
+        res.status(500);
+        return next(new ErrorDTO(ErrorCodes.INTERNAL, 'Could not validate the current session', err));
       }
-      // auto extend session if rememberMe is set
-      if (req.session.rememberMe) {
-        req.sessionOptions.expires = new Date(
-          Date.now() + Config.Server.sessionTimeout
-        );
-        req.session.expires = req.sessionOptions.expires.getTime();
-      }
-      return next();
     }
 
     let user;
@@ -86,6 +122,93 @@ export class AuthenticationMWs {
       return next(new ErrorDTO(ErrorCodes.INTERNAL, null, err));
     }
     return next();
+  }
+
+  private static extendRememberedSession(req: Request): void {
+    if (!req.session.rememberMe) {
+      return;
+    }
+    req.sessionOptions.expires = new Date(
+      Date.now() + Config.Server.sessionTimeout
+    );
+    req.session.expires = req.sessionOptions.expires.getTime();
+  }
+
+  /**
+   * @returns true when refreshed, false when revoked, null for non-persisted contexts.
+   */
+  private static async refreshPersistedPrincipal(req: Request): Promise<boolean | null> {
+    const sessionUser = req.session.context?.user;
+    if (!sessionUser) {
+      return false;
+    }
+
+    let cacheKey: string;
+    let loader: () => Promise<{user: ContextUser | null; expires?: number}>;
+    if (sessionUser.usedSharingKey) {
+      const sharingKey = sessionUser.usedSharingKey;
+      cacheKey = 'share:' + sharingKey;
+      loader = async () => {
+        const sharing = await ObjectManagers.getInstance().SharingManager.findOne(sharingKey);
+        if (!sharing || sharing.expires <= Date.now()) {
+          return {user: null};
+        }
+        return {
+          expires: sharing.expires,
+          user: {
+            id: null,
+            name: 'Guest',
+            role: UserRoles.LimitedGuest,
+            usedSharingKey: sharing.sharingKey,
+            overrideAllowBlockList: true,
+            allowQuery: ObjectManagers.getInstance().SessionManager.buildAllowListForSharing(sharing),
+          } as ContextUser,
+        };
+      };
+    } else if (Number.isInteger(sessionUser.id)) {
+      // Bind the cache entry to both immutable identity claims stored in the
+      // signed cookie. SQL engines may reuse a deleted numeric ID; an old
+      // session must never silently become the replacement account.
+      cacheKey = 'user:' + sessionUser.id + ':' + sessionUser.name;
+      loader = async () => {
+        const user = await ObjectManagers.getInstance().UserManager.findOne({id: sessionUser.id});
+        return {user: user?.name === sessionUser.name ? user : null};
+      };
+    } else {
+      // Unauthenticated and test contexts are derived from configuration, not DB rows.
+      return null;
+    }
+
+    const now = Date.now();
+    let cached = AuthenticationMWs.principalCache.get(cacheKey);
+    if (!cached || cached.expires <= now) {
+      const loaded = await loader();
+      cached = {
+        user: loaded.user,
+        expires: Math.min(
+          now + AuthenticationMWs.PRINCIPAL_CACHE_TTL,
+          loaded.expires ?? Number.MAX_SAFE_INTEGER
+        ),
+      };
+      AuthenticationMWs.principalCache.set(cacheKey, cached);
+      AuthenticationMWs.trimPrincipalCache();
+    }
+
+    if (!cached.user) {
+      return false;
+    }
+    req.session.context = await ObjectManagers.getInstance().SessionManager.buildContext(cached.user);
+    return true;
+  }
+
+  private static trimPrincipalCache(): void {
+    while (AuthenticationMWs.principalCache.size > AuthenticationMWs.PRINCIPAL_CACHE_MAX) {
+      const oldest = AuthenticationMWs.principalCache.keys().next().value as string | undefined;
+      if (!oldest) {
+        return;
+      }
+      AuthenticationMWs.principalCache.delete(oldest);
+    }
   }
 
   public static normalizePathParam(
@@ -221,7 +344,7 @@ export class AuthenticationMWs {
             sharing.password) &&
           !PasswordHelper.comparePassword(password, sharing.password))
       ) {
-        Logger.warn(LOG_TAG, 'Failed login from IP `' + req.ip + '` with sharing:' + sharingKey + ', bad password');
+        Logger.warn(LOG_TAG, 'Failed sharing login from IP `' + req.ip + '`, invalid key or password');
         res.status(401);
         return next(new ErrorDTO(ErrorCodes.CREDENTIAL_NOT_FOUND));
       }

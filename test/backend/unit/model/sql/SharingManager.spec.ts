@@ -124,4 +124,75 @@ describe('SharingManager', (sqlHelper: DBTestHelper) => {
     expect(updated.expires).to.equals(update.expires);
   });
 
+  it('should let an administrator update a share owned by another user only in force mode', async () => {
+    const sm = new SharingManager();
+    const saved = await sm.createSharing({
+      id: null,
+      sharingKey: 'ownedByUser',
+      searchQuery: {value: '/', type: SearchQueryTypes.directory} as TextSearch,
+      password: null,
+      creator,
+      expires: Date.now() + 1000,
+      timeStamp: Date.now(),
+    });
+    const connection = await SQLConnection.getConnection();
+    const admin = await connection.getRepository(UserEntity).save({
+      id: null,
+      name: 'admin user',
+      password: '',
+      role: UserRoles.Admin,
+    });
+    const update: UpdateSharingDTO = {
+      id: saved.id,
+      sharingKey: saved.sharingKey,
+      searchQuery: {value: '/updated', type: SearchQueryTypes.directory} as TextSearch,
+      creator: admin,
+      expires: Date.now() + 2000,
+      timeStamp: Date.now(),
+    };
+
+    let ownerError: Error;
+    try {
+      await sm.updateSharing(update, false);
+    } catch (e) {
+      ownerError = e as Error;
+    }
+    expect(ownerError?.message).to.contain('not found for current user');
+
+    const updated = await sm.updateSharing(update, true);
+    expect((updated.searchQuery as TextSearch).value).to.equal('/updated');
+    const refetched = await sm.findOne(saved.sharingKey);
+    expect(refetched.creator.id).to.equal(creator.id);
+  });
+
+  it('should validate the search query on update', async () => {
+    const sm = new SharingManager();
+    const saved = await sm.createSharing({
+      id: null,
+      sharingKey: 'invalidQueryUpdate',
+      searchQuery: {value: '/', type: SearchQueryTypes.directory} as TextSearch,
+      password: null,
+      creator,
+      expires: Date.now() + 1000,
+      timeStamp: Date.now(),
+    });
+
+    let validationError: Error;
+    try {
+      await sm.updateSharing({
+        ...saved,
+        creator,
+        searchQuery: {
+          value: '/',
+          type: SearchQueryTypes.directory,
+          unexpected: true,
+        } as any,
+      }, false);
+    } catch (e) {
+      validationError = e as Error;
+    }
+
+    expect(validationError?.message).to.contain('SearchQuery is not valid');
+  });
+
 });

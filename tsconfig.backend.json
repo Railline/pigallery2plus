@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "gulpfile.ts",
+    "benchmark/**/*.ts",
+    "src/backend/**/*.ts",
+    "src/common/**/*.ts",
+    "test/backend/**/*.ts",
+    "test/common/**/*.ts",
+    "test/TestHelper.ts",
+    "test/folder-reset.ts"
+  ]
+}

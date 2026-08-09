@@ -9,6 +9,7 @@ export class AlbumCoverFillingJob extends Job {
   public readonly Name = DefaultsJobs[DefaultsJobs['Album Cover Filling']];
   public readonly ConfigTemplate: DynamicConfig[] = null;
   directoryToSetCover: { id: number; name: string; path: string }[] = null;
+  private directoryToSetCoverHead = 0;
   status: 'Persons' | 'Albums' | 'Directory' = 'Persons';
   private availableSessions: SessionContext[];
 
@@ -24,6 +25,7 @@ export class AlbumCoverFillingJob extends Job {
   protected async init(): Promise<void> {
     this.status = 'Persons';
     this.directoryToSetCover = null;
+    this.directoryToSetCoverHead = 0;
     this.availableSessions = null;
   }
 
@@ -33,6 +35,7 @@ export class AlbumCoverFillingJob extends Job {
       this.availableSessions = await ObjectManagers.getInstance().SessionManager.getAvailableUserSessions();
       this.directoryToSetCover =
         await ObjectManagers.getInstance().CoverManager.getPartialDirsWithoutCovers(this.availableSessions.map(s => s.user.projectionKey));
+      this.directoryToSetCoverHead = 0;
       this.Progress.log(`Loaded ${this.directoryToSetCover.length} directories to create cover for.`);
       this.Progress.Left = this.directoryToSetCover.length + 2;
       return true;
@@ -72,20 +75,21 @@ export class AlbumCoverFillingJob extends Job {
   }
 
   private async stepDirectoryCover(): Promise<boolean> {
-    if (this.directoryToSetCover.length === 0) {
+    if (this.getDirectoriesLeft() === 0) {
       this.directoryToSetCover =
         await ObjectManagers.getInstance().CoverManager.getPartialDirsWithoutCovers(this.availableSessions.map(s => s.user.projectionKey));
+      this.directoryToSetCoverHead = 0;
       // double check if there is really no more
-      if (this.directoryToSetCover.length > 0) {
-        this.Progress.log(`Loaded ${this.directoryToSetCover.length} more directories to create cover for.`);
+      if (this.getDirectoriesLeft() > 0) {
+        this.Progress.log(`Loaded ${this.getDirectoriesLeft()} more directories to create cover for.`);
         return true; // continue
       }
       this.Progress.Left = 0;
       return false;
     }
-    const directory = this.directoryToSetCover.shift();
+    const directory = this.takeNextDirectory();
     this.Progress.log('Setting cover: ' + directory.path + directory.name);
-    this.Progress.Left = this.directoryToSetCover.length;
+    this.Progress.Left = this.getDirectoriesLeft();
 
     const conn = await SQLConnection.getConnection();
     for (const session of this.availableSessions) {
@@ -97,5 +101,24 @@ export class AlbumCoverFillingJob extends Job {
     }
     this.Progress.Processed++;
     return true;
+  }
+
+  private getDirectoriesLeft(): number {
+    return this.directoryToSetCover.length - this.directoryToSetCoverHead;
+  }
+
+  private takeNextDirectory(): { id: number; name: string; path: string } {
+    const directory = this.directoryToSetCover[this.directoryToSetCoverHead++];
+    if (this.directoryToSetCoverHead === this.directoryToSetCover.length) {
+      this.directoryToSetCover = [];
+      this.directoryToSetCoverHead = 0;
+    } else if (
+      this.directoryToSetCoverHead >= 4096 &&
+      this.directoryToSetCoverHead * 2 >= this.directoryToSetCover.length
+    ) {
+      this.directoryToSetCover = this.directoryToSetCover.slice(this.directoryToSetCoverHead);
+      this.directoryToSetCoverHead = 0;
+    }
+    return directory;
   }
 }

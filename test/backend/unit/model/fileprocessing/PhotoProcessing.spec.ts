@@ -2,10 +2,170 @@ import {expect} from 'chai';
 import {Config} from '../../../../../src/common/config/private/Config';
 import {ProjectPath} from '../../../../../src/backend/ProjectPath';
 import * as path from 'path';
-import {PhotoProcessing} from '../../../../../src/backend/model/fileaccess/fileprocessing/PhotoProcessing';
+import * as os from 'os';
+import * as fsp from 'fs/promises';
+import {
+  calculateThumbnailConcurrency,
+  PhotoProcessing,
+} from '../../../../../src/backend/model/fileaccess/fileprocessing/PhotoProcessing';
+import {
+  ImageRendererFactory,
+  MediaRendererInput,
+  ThumbnailSourceType,
+} from '../../../../../src/backend/model/fileaccess/PhotoWorker';
 
 
 describe('PhotoProcessing', () => {
+
+  it('should bound automatic thumbnail concurrency while honoring an explicit limit', () => {
+    expect(calculateThumbnailConcurrency(1, 0)).to.equal(1);
+    expect(calculateThumbnailConcurrency(4, 0)).to.equal(3);
+    expect(calculateThumbnailConcurrency(32, 0)).to.equal(4);
+    expect(calculateThumbnailConcurrency(32, 2)).to.equal(2);
+    expect(calculateThumbnailConcurrency(32, 16)).to.equal(16);
+    expect(calculateThumbnailConcurrency(32, 100)).to.equal(31);
+    expect(calculateThumbnailConcurrency(Number.NaN, Number.NaN)).to.equal(1);
+  });
+
+  it('should use ffmpeg when animated GIF metadata exceeds the Sharp pixel limit', async () => {
+    const originalMetadata = ImageRendererFactory.metadata;
+    ImageRendererFactory.metadata = async () => {
+      throw new Error('Input image exceeds pixel limit');
+    };
+
+    const processing = PhotoProcessing as unknown as {
+      shouldUseFfmpegAnimatedThumbnail(input: MediaRendererInput): Promise<boolean>;
+    };
+    const input: MediaRendererInput = {
+      type: ThumbnailSourceType.Photo,
+      mediaPath: '/media/large-animation.gif',
+      outPath: '/tmp/large-animation.webp',
+      size: 320,
+      makeSquare: false,
+      quality: 85,
+      useLanczos3: true,
+      smartSubsample: true,
+      sharpOptions: {},
+      animate: true,
+    };
+
+    try {
+      expect(await processing.shouldUseFfmpegAnimatedThumbnail(input)).to.equal(true);
+    } finally {
+      ImageRendererFactory.metadata = originalMetadata;
+    }
+  });
+
+  it('should deduplicate concurrent generation before asynchronous prechecks', async () => {
+    const originalImageFolder = ProjectPath.ImageFolder;
+    const originalTranscodedFolder = ProjectPath.TranscodedFolder;
+    const processing = PhotoProcessing as unknown as {
+      removeFailedThumbnailIfSourceIsReadable(
+        input: MediaRendererInput,
+        outPath: string
+      ): Promise<void>;
+    };
+    const originalPrecheck = processing.removeFailedThumbnailIfSourceIsReadable;
+    const tempFolder = await fsp.mkdtemp(path.join(os.tmpdir(), 'pg2-thumbnail-lock-'));
+    let releasePrecheck: () => void;
+    const precheckGate = new Promise<void>((resolve) => {
+      releasePrecheck = resolve;
+    });
+    let precheckCalls = 0;
+
+    try {
+      ProjectPath.ImageFolder = path.join(tempFolder, 'images');
+      ProjectPath.TranscodedFolder = path.join(tempFolder, 'transcoded');
+      await fsp.mkdir(ProjectPath.ImageFolder, {recursive: true});
+      const mediaPath = path.join(ProjectPath.ImageFolder, 'photo.jpg');
+      await fsp.writeFile(mediaPath, 'source');
+      const outPath = PhotoProcessing.generateConvertedPath(mediaPath, 320);
+      await fsp.mkdir(path.dirname(outPath), {recursive: true});
+      await fsp.writeFile(outPath, 'cached');
+
+      processing.removeFailedThumbnailIfSourceIsReadable = async (): Promise<void> => {
+        precheckCalls++;
+        await precheckGate;
+      };
+
+      const first = PhotoProcessing.generateThumbnail(
+        mediaPath,
+        320,
+        ThumbnailSourceType.Photo,
+        false
+      );
+      const second = PhotoProcessing.generateThumbnail(
+        mediaPath,
+        320,
+        ThumbnailSourceType.Photo,
+        false
+      );
+
+      expect(precheckCalls).to.equal(1);
+      releasePrecheck();
+      expect(await Promise.all([first, second])).to.deep.equal([outPath, outPath]);
+    } finally {
+      processing.removeFailedThumbnailIfSourceIsReadable = originalPrecheck;
+      ProjectPath.ImageFolder = originalImageFolder;
+      ProjectPath.TranscodedFolder = originalTranscodedFolder;
+      await fsp.rm(tempFolder, {recursive: true, force: true});
+    }
+  });
+
+  it('should keep valid thumbnail names while confining the final cache path', async () => {
+    const originalImageFolder = ProjectPath.ImageFolder;
+    const originalTranscodedFolder = ProjectPath.TranscodedFolder;
+    const originalAnimateGif = Config.Media.Photo.animateGif;
+    const originalSmartSubsample = Config.Media.Photo.smartSubsample;
+    const originalQuality = Config.Media.Photo.quality;
+    const tempFolder = await fsp.mkdtemp(path.join(os.tmpdir(), 'pg2-thumbnail-path-'));
+
+    try {
+      ProjectPath.ImageFolder = path.join(tempFolder, 'images');
+      ProjectPath.TranscodedFolder = path.join(tempFolder, 'transcoded');
+      Config.Media.Photo.animateGif = true;
+      Config.Media.Photo.smartSubsample = true;
+      Config.Media.Photo.quality = 85;
+
+      const mediaPath = path.join(
+        ProjectPath.ImageFolder,
+        'nested',
+        'vacances..été #1.gif'
+      );
+      const convertedPath = PhotoProcessing.generateConvertedPath(mediaPath, 320);
+      expect(convertedPath).to.equal(path.join(
+        ProjectPath.TranscodedFolder,
+        'nested',
+        'vacances..été #1.gif_320q85animcs.webp'
+      ));
+      expect(Config.Media.Photo.animateGif).to.equal(true);
+
+      expect(() => PhotoProcessing.generateConvertedPath(
+        path.join(tempFolder, 'images-evil', 'photo.jpg'),
+        320
+      )).to.throw('outside image folder');
+      expect(() => PhotoProcessing.generateConvertedPath(
+        path.join(ProjectPath.ImageFolder, '..', 'outside.jpg'),
+        320
+      )).to.throw('outside image folder');
+
+      const smaller = PhotoProcessing.generateConvertedPath(mediaPath, 160);
+      await fsp.mkdir(path.dirname(convertedPath), {recursive: true});
+      await fsp.writeFile(smaller, 'small');
+      await fsp.writeFile(convertedPath, 'large');
+      expect(await PhotoProcessing.findExistingThumbnail(
+        mediaPath,
+        [160, 320]
+      )).to.equal(convertedPath);
+    } finally {
+      ProjectPath.ImageFolder = originalImageFolder;
+      ProjectPath.TranscodedFolder = originalTranscodedFolder;
+      Config.Media.Photo.animateGif = originalAnimateGif;
+      Config.Media.Photo.smartSubsample = originalSmartSubsample;
+      Config.Media.Photo.quality = originalQuality;
+      await fsp.rm(tempFolder, {recursive: true, force: true});
+    }
+  });
 
   it('should generate converted gif file path', async () => {
 

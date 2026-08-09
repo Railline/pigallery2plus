@@ -13,10 +13,21 @@ import {ExtensionConfigWrapper} from '../model/extension/ExtensionConfigWrapper'
 import {SharingEntity} from '../model/database/enitites/SharingEntity';
 import {Config} from '../../common/config/private/Config';
 import * as path from 'path';
+import {promises as fsp} from 'fs';
+import {ProjectPath} from '../ProjectPath';
+import {
+  ConcurrencyLimitAbortedError,
+  ConcurrencyLimiter,
+  ConcurrencyLimitQueueFullError
+} from '../model/fileaccess/ConcurrencyLimiter';
 
 const forcedDebug = process.env['NODE_ENV'] === 'debug';
 
 export class RenderingMWs {
+  private static readonly originalMediaLimiter = new ConcurrencyLimiter(
+    (): number => Config.Media.maxConcurrentOriginalMediaStreams
+  );
+
   public static renderResult(
     req: Request,
     res: Response,
@@ -85,15 +96,83 @@ export class RenderingMWs {
     return RenderingMWs.renderMessage(res, rs);
   }
 
-  public static renderFile(
+  public static async renderFile(
     req: Request,
     res: Response,
     next: NextFunction
-  ): void {
+  ): Promise<void> {
     if (!req.resultPipe) {
       return next();
     }
-    const filePath = req.resultPipe as string;
+    const requestedFilePath = req.resultPipe as string;
+    const filePath = path.resolve(requestedFilePath);
+    const mediaRoot = path.resolve(ProjectPath.ImageFolder);
+    const tempRoot = path.resolve(ProjectPath.TempFolder);
+    let fileRoot: string;
+    let release: (() => void) | null = null;
+    const releaseOnce = (): void => {
+      if (!release) {
+        return;
+      }
+      const currentRelease = release;
+      release = null;
+      res.removeListener('finish', releaseOnce);
+      res.removeListener('close', releaseOnce);
+      currentRelease();
+    };
+    if (filePath.startsWith(mediaRoot + path.sep)) {
+      fileRoot = mediaRoot;
+      const abortController = new AbortController();
+      const abortWhileQueued = (): void => abortController.abort();
+      res.once('close', abortWhileQueued);
+      try {
+        release = await RenderingMWs.originalMediaLimiter.acquire(abortController.signal);
+      } catch (error) {
+        if (error instanceof ConcurrencyLimitAbortedError) {
+          return;
+        }
+        if (error instanceof ConcurrencyLimitQueueFullError) {
+          res.setHeader('Retry-After', '2');
+          res.sendStatus(503);
+          return;
+        }
+        return next(error);
+      } finally {
+        res.removeListener('close', abortWhileQueued);
+      }
+      if (abortController.signal.aborted || res.destroyed) {
+        releaseOnce();
+        return;
+      }
+      res.once('finish', releaseOnce);
+      res.once('close', releaseOnce);
+
+      // Validate source media only after acquiring a slot. A burst of hundreds
+      // of thumbnail/original requests must not enqueue hundreds of NAS stats
+      // ahead of local application files in libuv's shared worker pool.
+      try {
+        if ((await fsp.stat(filePath)).isDirectory()) {
+          releaseOnce();
+          return next();
+        }
+      } catch (error) {
+        releaseOnce();
+        return next(new ErrorDTO(
+          ErrorCodes.PATH_ERROR,
+          'no such file:' + (req.params['mediaPath'] || path.basename(filePath)),
+          'can\'t find file: ' + filePath
+        ));
+      }
+    } else if (filePath.startsWith(tempRoot + path.sep)) {
+      fileRoot = tempRoot;
+    } else {
+      return next(new ErrorDTO(
+        ErrorCodes.PATH_ERROR,
+        'no such file:' + (req.params['mediaPath'] || path.basename(requestedFilePath)),
+        'Refusing to serve a file outside the configured media and temporary folders'
+      ));
+    }
+
     const fileName = path.basename(filePath);
     if (!res.hasHeader('Cache-Control')) {
       res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
@@ -102,13 +181,19 @@ export class RenderingMWs {
     res.setHeader('X-Accel-Buffering', 'no');
     res.setHeader('Content-Disposition', RenderingMWs.contentDispositionInline(fileName));
 
-    return res.sendFile(path.basename(filePath), {
-      root: path.dirname(filePath),
-      maxAge: 31536000,
-      dotfiles: 'allow',
-      acceptRanges: true,
-      lastModified: true,
-    });
+    try {
+      res.sendFile(path.relative(fileRoot, filePath), {
+        root: fileRoot,
+        maxAge: 365 * 24 * 60 * 60 * 1000,
+        immutable: true,
+        dotfiles: 'allow',
+        acceptRanges: true,
+        lastModified: true,
+      });
+    } catch (error) {
+      releaseOnce();
+      return next(error);
+    }
   }
 
   private static contentDispositionInline(fileName: string): string {

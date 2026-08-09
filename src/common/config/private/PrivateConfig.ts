@@ -1089,6 +1089,16 @@ export class ServerMediaConfig extends ClientMediaConfig {
   tempFolder: string = 'demo/tmp';
 
   @ConfigProperty({
+    type: 'unsignedInt', min: 1, max: 128,
+    tags: {
+      name: $localize`Concurrent original media streams`,
+      priority: ConfigPriority.underTheHood
+    },
+    description: $localize`Maximum number of original photos and videos read concurrently. Limiting slow NAS reads keeps thumbnails, API calls, and the web interface responsive.`,
+  })
+  maxConcurrentOriginalMediaStreams: number = 8;
+
+  @ConfigProperty({
     tags: {
       name: $localize`Video`,
       uiIcon: 'ionVideocamOutline',
@@ -1327,4 +1337,3 @@ export class ServerConfig extends ClientConfig {
   })
   Jobs: ServerJobConfig = new ServerJobConfig();
 }
-

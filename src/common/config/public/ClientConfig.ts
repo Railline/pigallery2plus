@@ -1333,7 +1333,7 @@ export class ClientPhotoConfig {
       priority: ConfigPriority.underTheHood,
       uiResetNeeded: {server: true}
     },
-    description: 'By default the app uses the number of cpus -1 concurrent threads to generate thumbnails. Set this number higher than 0 to limit the number of concurrent threads.',
+    description: 'By default the app uses up to four concurrent thumbnail renderers (and never more than CPUs - 1). Set this number higher than 0 to use an explicit concurrency limit.',
   })
   concurrentThumbnailGenerationsLimit: number = 0;
 

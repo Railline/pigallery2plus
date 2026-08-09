@@ -1,23 +1,30 @@
 #!/bin/bash
-# PiGallery2: Build -> Release -> Docker (Debian Trixie) -> Diagnostics
+# PiGallery2 Plus: Build -> Release -> Docker (Debian Trixie) -> Diagnostics
 # This is a helper script for building docker locally. Its a best effort file ans provided as it is, do not expect significant support for this if it gets our of sync from the project. 
 
-set -e # Stop on any error
+set -Eeuo pipefail
 
 # Configuration
-REPO_URL="https://github.com/bpatrik/pigallery2.git"
-BUILD_DIR="pigallery2_local_build"
-IMAGE_NAME="pigallery2-custom:local"
+REPO_URL="${REPO_URL:-https://github.com/Railline/pigallery2plus.git}"
+REPO_REF="${REPO_REF:-main}"
+BUILD_DIR="$(mktemp -d -t pigallery2plus-build.XXXXXX)"
+IMAGE_NAME="${IMAGE_NAME:-pigallery2plus:local}"
+NPM_CLI_VERSION="${NPM_CLI_VERSION:-12.0.2}"
+trap 'rm -rf -- "$BUILD_DIR"' EXIT
 
 echo "--- 1. Pre-flight Environment Check ---"
 
 # Check for Node.js
 if ! command -v node &> /dev/null; then
-    echo "Error: node is not installed. Please install Node.js (v22 recommended)."
+    echo "Error: node is not installed. Please install Node.js 22.22.2 or newer."
     exit 1
 else
     NODE_VER=$(node -v)
     echo "Found Node.js: $NODE_VER"
+fi
+if ! node -e 'const [major, minor, patch] = process.versions.node.split(".").map(Number); process.exit(major === 22 && (minor > 22 || (minor === 22 && patch >= 2)) ? 0 : 1)'; then
+    echo "Error: unsupported Node.js version. Expected >=22.22.2 and <23."
+    exit 1
 fi
 
 # Check for npm
@@ -34,6 +41,10 @@ if ! command -v docker &> /dev/null; then
     echo "Error: docker is not installed. Required for building the container."
     exit 1
 fi
+if ! docker info &> /dev/null; then
+    echo "Error: the Docker daemon is not reachable."
+    exit 1
+fi
 
 # Check for Git
 if ! command -v git &> /dev/null; then
@@ -42,20 +53,18 @@ if ! command -v git &> /dev/null; then
 fi
 
 echo "--- 2. Preparing Repository ---"
-if [ -d "$BUILD_DIR" ]; then 
-    echo "Cleaning up old build directory..."
-    rm -rf "$BUILD_DIR"
-fi
-git clone --depth 1 $REPO_URL $BUILD_DIR
-cd $BUILD_DIR
+git clone --depth 1 --branch "$REPO_REF" "$REPO_URL" "$BUILD_DIR"
+cd "$BUILD_DIR"
 
 echo "--- 3. Installing Build Dependencies ---"
-# --unsafe-perm handles permission issues during lifecycle scripts (like sharp/libvips)
-npm install --unsafe-perm
+# Keep optional packages so the release can select the right platform binaries.
+npx --yes "npm@${NPM_CLI_VERSION}" ci --include=optional \
+    --strict-allow-scripts --allow-git=none --allow-remote=none
 
 echo "--- 4. Creating Production Release ---"
 # This mirrors the GitHub Action workflow you provided
-npm run create-release -- --skip-opt-packages=ffmpeg-static,ffprobe-static --force-opt-packages
+npx --yes "npm@${NPM_CLI_VERSION}" run create-release -- \
+    --skip-opt-packages=ffmpeg-static,ffprobe-static --force-opt-packages
 
 echo "--- 5. Building Docker Image (Debian Trixie) ---"
 # Match the Dockerfile expectation: rename 'release' to 'pigallery2-release'
@@ -67,13 +76,13 @@ else
 fi
 
 # You might need to run this with sudo
-docker build -t $IMAGE_NAME \
+docker build -t "$IMAGE_NAME" \
              -f docker/debian-trixie/Dockerfile.build .
 
 echo "--- 6. Running Post-Build Diagnostics ---"
 # The Dockerfile runs diagnostics during build, but this verifies the final image layer
 # You might need to run this with sudo
-docker run --rm $IMAGE_NAME node ./src/backend/index --run-diagnostics --Server-Log-level=silly
+docker run --rm "$IMAGE_NAME" --run-diagnostics --Server-Log-level=silly
 
 echo "------------------------------------------------"
 echo "SUCCESS: $IMAGE_NAME is ready."
