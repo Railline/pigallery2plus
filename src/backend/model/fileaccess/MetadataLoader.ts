@@ -305,15 +305,6 @@ export class MetadataLoader {
     fullPath: string
   ): Promise<{width: number; height: number}> {
     const extension = path.extname(fullPath).toLowerCase();
-    if (extension === '.heic' || extension === '.avif') {
-      try {
-        return await MetadataLoader.readHeifDimensions(fullPath);
-      } catch (error) {
-        // Some valid HEIF containers keep their item properties beyond the
-        // bounded header parsed below. Let sharp handle those uncommon files.
-      }
-    }
-
     try {
       const info = await ImageRendererFactory.metadata(
         fullPath,
@@ -327,20 +318,19 @@ export class MetadataLoader {
         return {width: info.width, height: info.height};
       }
     } catch (error) {
-      // Raw camera formats are not supported by every libvips build. Fall
-      // through to the already-installed EXIF parser before giving up.
+      // Some formats are not supported by every libvips build.
     }
 
-    const fallback = MetadataLoader.mapExifReader(
-      await ExifReader.load(fullPath, {expanded: true})
-    );
-    const width = fallback.ifd0?.ImageWidth || fallback.exif?.ExifImageWidth;
-    const height = fallback.ifd0?.ImageHeight || fallback.exif?.ExifImageHeight;
-    if (!Number.isFinite(width) || width <= 0 ||
-      !Number.isFinite(height) || height <= 0) {
-      throw new Error('Could not determine image dimensions');
+    if (extension === '.heic' || extension === '.avif') {
+      // Keep a bounded parser as a fallback for libheif builds that reject an
+      // otherwise readable container because of their decoding limits.
+      return MetadataLoader.readHeifDimensions(fullPath);
     }
-    return {width, height};
+
+    // The regular metadata pass below already extracts EXIF dimensions. Do not
+    // open the file again with ExifReader here: for unsupported large RAW files
+    // that fallback may buffer the complete input just to obtain two numbers.
+    throw new Error('Could not determine image dimensions');
   }
 
   /**
