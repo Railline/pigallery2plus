@@ -4,6 +4,7 @@ import {MetadataLoader} from '../../../../../src/backend/model/fileaccess/Metada
 import {Utils} from '../../../../../src/common/Utils';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import {PhotoProcessing} from '../../../../../src/backend/model/fileaccess/fileprocessing/PhotoProcessing';
 import {VideoProcessing} from '../../../../../src/backend/model/fileaccess/fileprocessing/VideoProcessing';
 import {Config} from '../../../../../src/common/config/private/Config';
@@ -32,6 +33,70 @@ describe('MetadataLoader', () => {
     Config.Faces.enabled = true;
     Config.Faces.keywordsToPersons = true;
     Config.Extensions.enabled = false;
+  });
+
+  it('rejects zero-length HEIF boxes without blocking the event loop', async () => {
+    const tempFolder = fs.mkdtempSync(path.join(os.tmpdir(), 'pg2-heif-header-'));
+    const malformedPath = path.join(tempFolder, 'malformed.heic');
+    const malformed = Buffer.alloc(24);
+    malformed.writeUInt32BE(16, 0);
+    malformed.write('ftyp', 4, 'ascii');
+    malformed.write('heic', 8, 'ascii');
+    malformed.writeUInt32BE(0, 16);
+    malformed.write('meta', 20, 'ascii');
+    fs.writeFileSync(malformedPath, malformed);
+    const loader = MetadataLoader as unknown as {
+      readHeifDimensions(filePath: string): Promise<{width: number; height: number}>;
+    };
+    let error: Error | null = null;
+
+    try {
+      await loader.readHeifDimensions(malformedPath);
+    } catch (caught) {
+      error = caught as Error;
+    } finally {
+      fs.rmSync(tempFolder, {recursive: true, force: true});
+    }
+
+    expect(error).to.be.instanceOf(Error);
+    expect(error.message).to.equal('Invalid HEIF: no ipco box');
+  });
+
+  it('reads HEIF dimensions from extended-size boxes', async () => {
+    const makeBox = (name: string, payload: Buffer, extended = false): Buffer => {
+      const headerSize = extended ? 16 : 8;
+      const box = Buffer.alloc(headerSize + payload.length);
+      box.writeUInt32BE(extended ? 1 : box.length, 0);
+      box.write(name, 4, 'ascii');
+      if (extended) {
+        box.writeBigUInt64BE(BigInt(box.length), 8);
+      }
+      payload.copy(box, headerSize);
+      return box;
+    };
+    const ispePayload = Buffer.alloc(12);
+    ispePayload.writeUInt32BE(4032, 4);
+    ispePayload.writeUInt32BE(3024, 8);
+    const ispe = makeBox('ispe', ispePayload, true);
+    const ipco = makeBox('ipco', ispe);
+    const iprp = makeBox('iprp', ipco, true);
+    const meta = makeBox('meta', Buffer.concat([Buffer.alloc(4), iprp]), true);
+    const ftyp = makeBox('ftyp', Buffer.from('avif\0\0\0\0avif', 'ascii'));
+    const tempFolder = fs.mkdtempSync(path.join(os.tmpdir(), 'pg2-heif-header-'));
+    const imagePath = path.join(tempFolder, 'extended.avif');
+    fs.writeFileSync(imagePath, Buffer.concat([ftyp, meta]));
+    const loader = MetadataLoader as unknown as {
+      readHeifDimensions(filePath: string): Promise<{width: number; height: number}>;
+    };
+
+    try {
+      expect(await loader.readHeifDimensions(imagePath)).to.deep.equal({
+        width: 4032,
+        height: 3024,
+      });
+    } finally {
+      fs.rmSync(tempFolder, {recursive: true, force: true});
+    }
   });
 
 

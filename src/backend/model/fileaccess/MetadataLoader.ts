@@ -16,8 +16,9 @@ import {Utils} from '../../../common/Utils';
 import {FFmpegFactory} from '../FFmpegFactory';
 import {ExtensionDecorator} from '../extension/ExtensionDecorator';
 import {DateTags} from './MetadataCreationDate';
+import {ImageRendererFactory} from './PhotoWorker';
+import type {SharpOptions} from 'sharp';
 
-const {imageSizeFromFile} = require('image-size/fromFile');
 const LOG_TAG = '[MetadataLoader]';
 const ffmpeg = FFmpegFactory.get();
 
@@ -211,7 +212,7 @@ export class MetadataLoader {
       }
       try {
         //read the actual image size, don't rely on tags for this
-        const info = await imageSizeFromFile(fullPath);
+        const info = await MetadataLoader.readPhotoDimensions(fullPath);
         metadata.size = {width: info.width, height: info.height};
       } catch (e) {
         //in case of failure, set dimensions to 0 so they may be read via tags
@@ -298,6 +299,157 @@ export class MetadataLoader {
       return MetadataLoader.EMPTY_METADATA;
     }
     return metadata;
+  }
+
+  private static async readPhotoDimensions(
+    fullPath: string
+  ): Promise<{width: number; height: number}> {
+    const extension = path.extname(fullPath).toLowerCase();
+    if (extension === '.heic' || extension === '.avif') {
+      try {
+        return await MetadataLoader.readHeifDimensions(fullPath);
+      } catch (error) {
+        // Some valid HEIF containers keep their item properties beyond the
+        // bounded header parsed below. Let sharp handle those uncommon files.
+      }
+    }
+
+    try {
+      const info = await ImageRendererFactory.metadata(
+        fullPath,
+        false,
+        Config.Media.Photo.sharpOptions as unknown as SharpOptions
+      );
+      if (
+        Number.isFinite(info.width) && info.width > 0 &&
+        Number.isFinite(info.height) && info.height > 0
+      ) {
+        return {width: info.width, height: info.height};
+      }
+    } catch (error) {
+      // Raw camera formats are not supported by every libvips build. Fall
+      // through to the already-installed EXIF parser before giving up.
+    }
+
+    const fallback = MetadataLoader.mapExifReader(
+      await ExifReader.load(fullPath, {expanded: true})
+    );
+    const width = fallback.ifd0?.ImageWidth || fallback.exif?.ExifImageWidth;
+    const height = fallback.ifd0?.ImageHeight || fallback.exif?.ExifImageHeight;
+    if (!Number.isFinite(width) || width <= 0 ||
+      !Number.isFinite(height) || height <= 0) {
+      throw new Error('Could not determine image dimensions');
+    }
+    return {width, height};
+  }
+
+  /**
+   * Reads HEIF/AVIF `ispe` boxes from a bounded header. Every box must advance
+   * by at least its header size, preventing the zero-length infinite loops in
+   * image-size <= 2.0.2 (GHSA-5p2g-fcmc-qvqq).
+   */
+  private static async readHeifDimensions(
+    fullPath: string
+  ): Promise<{width: number; height: number}> {
+    const MAX_HEADER_SIZE = 512 * 1024;
+    const file = await fs.promises.open(fullPath, 'r');
+    try {
+      const stat = await file.stat();
+      if (stat.size <= 0) {
+        throw new Error('Empty image');
+      }
+      const input = Buffer.alloc(Math.min(stat.size, MAX_HEADER_SIZE));
+      const read = await file.read(input, 0, input.length, 0);
+      const header = input.subarray(0, read.bytesRead);
+
+      type IsoBox = {
+        name: string;
+        offset: number;
+        contentOffset: number;
+        size: number;
+        end: number;
+      };
+      const readBox = (offset: number, end: number): IsoBox | null => {
+        if (offset < 0 || end - offset < 8) {
+          return null;
+        }
+        let size = header.readUInt32BE(offset);
+        let headerSize = 8;
+        if (size === 1) {
+          if (end - offset < 16) {
+            return null;
+          }
+          const extendedSize = header.readBigUInt64BE(offset + 8);
+          if (extendedSize > BigInt(Number.MAX_SAFE_INTEGER)) {
+            return null;
+          }
+          size = Number(extendedSize);
+          headerSize = 16;
+        } else if (size === 0) {
+          size = end - offset;
+        }
+        if (size < headerSize || offset + size > end) {
+          return null;
+        }
+        return {
+          name: header.toString('ascii', offset + 4, offset + 8),
+          offset,
+          contentOffset: offset + headerSize,
+          size,
+          end: offset + size,
+        };
+      };
+      const findBox = (name: string, start: number, end: number): IsoBox | null => {
+        let offset = start;
+        let boxesRead = 0;
+        while (offset < end && boxesRead++ < 4096) {
+          const box = readBox(offset, end);
+          if (!box) {
+            return null;
+          }
+          if (box.name === name) {
+            return box;
+          }
+          offset = box.end;
+        }
+        return null;
+      };
+
+      const meta = findBox('meta', 0, header.length);
+      const iprp = meta && findBox('iprp', meta.contentOffset + 4, meta.end);
+      const ipco = iprp && findBox('ipco', iprp.contentOffset, iprp.end);
+      if (!ipco) {
+        throw new Error('Invalid HEIF: no ipco box');
+      }
+
+      const dimensions: Array<{width: number; height: number}> = [];
+      let offset = ipco.contentOffset;
+      let boxesRead = 0;
+      while (offset < ipco.end && boxesRead++ < 4096) {
+        const box = readBox(offset, ipco.end);
+        if (!box) {
+          break;
+        }
+        if (box.name === 'ispe' && box.end - box.contentOffset >= 12) {
+          const width = header.readUInt32BE(box.contentOffset + 4);
+          const height = header.readUInt32BE(box.contentOffset + 8);
+          if (width > 0 && height > 0) {
+            dimensions.push({width, height});
+          }
+        }
+        offset = box.end;
+      }
+      if (dimensions.length === 0) {
+        throw new Error('Invalid HEIF: no dimensions');
+      }
+      return dimensions.reduce((largest, current) =>
+        current.width * current.height > largest.width * largest.height ?
+          current :
+          largest
+      );
+    } finally {
+      await file.close();
+    }
   }
 
   private static mapMetadata(metadata: PhotoMetadata | VideoMetadata, exif: any, mapDimension = true) {
