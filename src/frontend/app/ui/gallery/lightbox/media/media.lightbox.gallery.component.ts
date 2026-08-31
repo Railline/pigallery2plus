@@ -18,6 +18,8 @@ export class GalleryLightboxMediaComponent implements OnChanges {
   @Input() nextGridMedia: GridMedia;
   @Input() loadMedia = false; // prevents loading media
   @Input() windowAspect = 1;
+  @Input() renderWidth = 1;
+  @Input() renderHeight = 1;
   @Input() zoom = 1;
   @Input() drag = {x: 0, y: 0};
   @Output() videoSourceError = new EventEmitter();
@@ -259,7 +261,10 @@ export class GalleryLightboxMediaComponent implements OnChanges {
     this.imageLoadFinished.this = true;
     console.error(
       'Error: cannot load media for lightbox url: ' +
-      this.gridMedia.getBestSizedMediaPath(window.innerWidth, window.innerHeight)
+      this.gridMedia.getBestSizedMediaPath(
+        this.previewRenderWidth,
+        this.previewRenderHeight
+      )
     );
     this.loadNextPhoto();
   }
@@ -305,7 +310,10 @@ export class GalleryLightboxMediaComponent implements OnChanges {
       this.imageLoadFinished.next = true;
       return;
     }
-    this.nextImage.src = this.nextGridMedia.getBestSizedMediaPath(window.innerWidth, window.innerHeight);
+    this.nextImage.src = this.nextGridMedia.getBestSizedMediaPath(
+      this.renderWidth,
+      this.renderHeight
+    );
 
     this.nextImage.onload = () => this.imageLoadFinished.next = true;
     this.nextImage.onerror = () => {
@@ -327,12 +335,16 @@ export class GalleryLightboxMediaComponent implements OnChanges {
       return true;
     }
 
-    const selectedSize = this.gridMedia.getMediaSize(window.innerWidth, window.innerHeight);
-    const minDisplaySize = Math.min(window.innerWidth, window.innerHeight);
+    const selectedSize = this.gridMedia.getMediaSize(
+      this.previewRenderWidth,
+      this.previewRenderHeight
+    );
+    const requiredSize = this.gridMedia.getRequiredMediaSize(
+      this.previewRenderWidth,
+      this.previewRenderHeight
+    );
 
-    // If the selected preview size is less than 50% of the minimum display dimension,
-    // consider it inadequate for lightbox display (e.g., 240px on a 1080p screen)
-    return selectedSize >= minDisplaySize * 0.5;
+    return selectedSize >= requiredSize;
   }
 
   private loadPhoto(): void {
@@ -344,11 +356,18 @@ export class GalleryLightboxMediaComponent implements OnChanges {
       this.zoom === 1 ||
       Config.Gallery.Lightbox.loadFullImageOnZoom === false
     ) {
-      if (this.photo.src == null) {
+      if (this.photo.src == null || this.photo.isBestFit === true) {
         // Check if the preview size is adequate for lightbox display
         // If not, load the original instead of a tiny preview
         if (this.isPreviewAdequateForLightbox()) {
-          this.photo.src = this.gridMedia.getBestSizedMediaPath(window.innerWidth, window.innerHeight);
+          const bestFitSrc = this.gridMedia.getBestSizedMediaPath(
+            this.previewRenderWidth,
+            this.previewRenderHeight
+          );
+          if (this.photo.src !== bestFitSrc) {
+            this.imageLoadFinished.this = false;
+          }
+          this.photo.src = bestFitSrc;
           this.photo.isBestFit = true;
         } else {
           this.photo.src = this.gridMedia.getOriginalMediaPath();
@@ -376,5 +395,13 @@ export class GalleryLightboxMediaComponent implements OnChanges {
       this.imageSize.height = null;
       this.imageSize.width = '100';
     }
+  }
+
+  private get previewRenderWidth(): number {
+    return this.renderWidth * Math.max(1, this.zoom);
+  }
+
+  private get previewRenderHeight(): number {
+    return this.renderHeight * Math.max(1, this.zoom);
   }
 }

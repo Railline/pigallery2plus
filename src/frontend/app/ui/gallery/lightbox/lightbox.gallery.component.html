@@ -11,6 +11,8 @@
                                 [zoom]="controls?.Zoom ?? 1"
                                 [drag]="controls?.drag ?? {x:0,y:0}"
                                 [windowAspect]="photoFrameDim.aspect"
+                                [renderWidth]="photoFrameDim.width"
+                                [renderHeight]="photoFrameDim.height"
                                 (videoSourceError)="onVideoSourceError()"
                                 #photo>
     </app-gallery-lightbox-media>
