@@ -4,6 +4,56 @@ import {Config} from '../../../../../common/config/public/Config';
 
 describe('GridMedia', () => {
 
+  describe('responsive thumbnail sizing', () => {
+    const makeMedia = (width: number, height: number): GridMedia => {
+      return new GridMedia({
+        name: 'photo.jpg',
+        directory: {name: 'photos', path: '/'},
+        metadata: {size: {width, height}},
+      } as PhotoDTO, 100, 100, 0);
+    };
+
+    it('selects the first thumbnail that is not smaller than the display', () => {
+      const media = makeMedia(4032, 3024);
+
+      expect(media.getRequiredMediaSize(800, 600, 1)).toBe(600);
+      expect(media.getMediaSize(800, 600, 1)).toBe(1080);
+    });
+
+    it('uses the fitted shorter edge for panoramas and portraits', () => {
+      const panorama = makeMedia(4000, 1000);
+      const portrait = makeMedia(1000, 4000);
+
+      expect(panorama.getRequiredMediaSize(1920, 1080, 1)).toBe(480);
+      expect(panorama.getMediaSize(1920, 1080, 1)).toBe(540);
+      expect(portrait.getRequiredMediaSize(1920, 1080, 1)).toBe(270);
+      expect(portrait.getMediaSize(1920, 1080, 1)).toBe(320);
+    });
+
+    it('accounts for high-density displays', () => {
+      const media = makeMedia(4032, 3024);
+
+      expect(media.getRequiredMediaSize(400, 300, 2)).toBe(600);
+      expect(media.getMediaSize(400, 300, 2)).toBe(1080);
+    });
+
+    it('does not request more pixels than the original contains', () => {
+      const media = makeMedia(640, 480);
+
+      expect(media.getRequiredMediaSize(1920, 1080, 2)).toBe(480);
+      expect(media.getMediaSize(1920, 1080, 2)).toBe(540);
+    });
+
+    it('does not cap a large grid tile to a blurry 540px thumbnail', () => {
+      const media = makeMedia(4032, 3024);
+      media.renderWidth = 1600;
+      media.renderHeight = 1200;
+
+      expect(media.getThumbnailSize()).toBe(2160);
+      expect(media.getThumbnailPath()).toContain('/2160');
+    });
+  });
+
   describe('isLivePhoto', () => {
     it('should return true when liveVideoPath is set', () => {
       const media = {

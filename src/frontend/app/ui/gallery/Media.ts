@@ -4,8 +4,6 @@ import {Config} from '../../../../common/config/public/Config';
 import {MediaDTO, MediaDTOUtils} from '../../../../common/entities/MediaDTO';
 
 export class Media extends MediaIcon {
-  private static readonly MaxGridThumbnailSize = 540;
-
   constructor(
       media: MediaDTO,
       public renderWidth: number,
@@ -26,10 +24,7 @@ export class Media extends MediaIcon {
   }
 
   getThumbnailSize(): number {
-    return Math.min(
-      this.getMediaSize(this.renderWidth, this.renderHeight),
-      Media.MaxGridThumbnailSize
-    );
+    return this.getMediaSize(this.renderWidth, this.renderHeight);
   }
 
   getReplacementThumbnailSize(): number {
@@ -83,6 +78,6 @@ export class Media extends MediaIcon {
   }
 
   getThumbnailPath(): string {
-    return this.getBestSizedMediaPath(this.renderWidth,this.renderHeight);
+    return this.getSizedMediaPath(this.getThumbnailSize());
   }
 }

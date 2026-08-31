@@ -4,6 +4,7 @@ import {GalleryLightboxMediaComponent} from './media.lightbox.gallery.component'
 import {LightboxService} from '../lightbox.service';
 import {GridMedia} from '../../grid/GridMedia';
 import {PhotoDTO} from '../../../../../../common/entities/PhotoDTO';
+import {Config} from '../../../../../../common/config/public/Config';
 
 class MockLightboxService {
   loopVideos = false;
@@ -131,5 +132,70 @@ describe('GalleryLightboxMediaComponent - Live Photo', () => {
     const badge = fixture.nativeElement.querySelector('.live-photo-badge');
     expect(badge).not.toBeNull();
     expect(badge.textContent.trim()).toBe('LIVE');
+  });
+
+  it('updates the selected preview when the displayed frame grows', () => {
+    const gridMedia = makeGridMedia();
+    const requestedFrames: string[] = [];
+    gridMedia.getBestSizedMediaPath = (width: number, height: number): string => {
+      requestedFrames.push(`${width}x${height}`);
+      return `preview-${width}x${height}`;
+    };
+    component.gridMedia = gridMedia;
+    component.loadMedia = true;
+    component.renderWidth = 800;
+    component.renderHeight = 600;
+    component.ngOnChanges();
+
+    expect(component.photo.src).toBe('preview-800x600');
+    expect(component.photo.isBestFit).toBeTrue();
+
+    component.renderWidth = 1600;
+    component.renderHeight = 1200;
+    component.ngOnChanges();
+
+    expect(component.photo.src).toBe('preview-1600x1200');
+    expect(requestedFrames).toContain('800x600');
+    expect(requestedFrames).toContain('1600x1200');
+  });
+
+  it('loads the original when every preview is too small for the display', () => {
+    const previousSetting = Config.Gallery.Lightbox.loadFullImageIfPreviewTooSmall;
+    Config.Gallery.Lightbox.loadFullImageIfPreviewTooSmall = true;
+    component.gridMedia = makeGridMedia();
+    component.loadMedia = true;
+    component.renderWidth = 8000;
+    component.renderHeight = 4500;
+
+    try {
+      component.ngOnChanges();
+      expect(component.photo.isBestFit).toBeFalse();
+    } finally {
+      Config.Gallery.Lightbox.loadFullImageIfPreviewTooSmall = previousSetting;
+    }
+  });
+
+  it('selects a larger preview for zoom when original loading is disabled', () => {
+    const previousSetting = Config.Gallery.Lightbox.loadFullImageOnZoom;
+    Config.Gallery.Lightbox.loadFullImageOnZoom = false;
+    const gridMedia = makeGridMedia();
+    gridMedia.getBestSizedMediaPath = (width: number, height: number): string =>
+      `preview-${width}x${height}`;
+    component.gridMedia = gridMedia;
+    component.loadMedia = true;
+    component.renderWidth = 400;
+    component.renderHeight = 300;
+
+    try {
+      component.ngOnChanges();
+      expect(component.photo.src).toBe('preview-400x300');
+
+      component.zoom = 2;
+      component.ngOnChanges();
+      expect(component.photo.src).toBe('preview-800x600');
+      expect(component.photo.isBestFit).toBeTrue();
+    } finally {
+      Config.Gallery.Lightbox.loadFullImageOnZoom = previousSetting;
+    }
   });
 });
