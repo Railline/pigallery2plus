@@ -49,13 +49,22 @@
                 <td>{{ extension.readme || 'No description available' }}</td>
                 <td>
                   <button
-                    *ngIf="!extension.installed"
+                    *ngIf="!extension.installed && extension.zipUrl"
                     class="btn btn-sm btn-primary"
                     (click)="installExtension(extension)"
                     [disabled]="loading"
                     i18n>
                     Install
                   </button>
+                  <a
+                    *ngIf="!extension.installed && !extension.zipUrl && extension.url"
+                    class="btn btn-sm btn-outline-primary"
+                    [href]="extension.url"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    i18n>
+                    Manual installation
+                  </a>
                   <span *ngIf="extension.installed" class="badge bg-success" i18n>Installed</span>
                 </td>
               </tr>
